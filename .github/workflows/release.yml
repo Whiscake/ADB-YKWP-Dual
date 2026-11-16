@@ -1,0 +1,28 @@
+name: release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - {os: macos-latest,   asset: dual-login-macos}
+          - {os: windows-latest, asset: dual-login-windows.exe}
+          - {os: ubuntu-latest,  asset: dual-login-linux}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install pyinstaller
+      - run: python build.py
+      - name: Rename
+        shell: bash
+        working-directory: dist
+        run: mv dual-login* "${{ matrix.asset }}"
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/${{ matrix.asset }}

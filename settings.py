@@ -1,0 +1,147 @@
+"""User settings, adb lookup and first-time setup."""
+import json
+import os
+import platform
+import secrets
+import shutil
+import socket
+import subprocess
+import sys
+import urllib.request
+import zipfile
+from pathlib import Path
+
+APP_NAME = "dual-login"
+
+
+def data_dir() -> Path:
+    system = platform.system()
+    if system == "Windows":
+        base = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
+    elif system == "Darwin":
+        base = Path.home() / "Library" / "Application Support"
+    else:
+        base = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
+    path = base / APP_NAME
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+DATA_DIR = data_dir()
+SETTINGS_FILE = DATA_DIR / "settings.json"
+
+DEFAULTS = {
+    "device_a": "",
+    "device_b": "",
+    "token": "",
+    "port": 8765,
+    "ntfy_url": "",
+    "game_package": "com.Level5.YWP",
+    "login_button_x": 525,
+    "login_button_y": 1187,
+}
+
+
+def load() -> dict:
+    data = dict(DEFAULTS)
+    if SETTINGS_FILE.exists():
+        data.update(json.loads(SETTINGS_FILE.read_text()))
+    return data
+
+
+def save(data: dict) -> None:
+    SETTINGS_FILE.write_text(json.dumps(data, indent=2) + "\n")
+
+
+# ---- adb ----
+
+_ADB_NAME = "adb.exe" if platform.system() == "Windows" else "adb"
+_PLATFORM_TOOLS_URL = "https://dl.google.com/android/repository/platform-tools-latest-{}.zip"
+
+
+def find_adb() -> str | None:
+    local = DATA_DIR / "platform-tools" / _ADB_NAME
+    if local.exists():
+        return str(local)
+    return shutil.which("adb")
+
+
+def download_adb() -> str:
+    key = {"Windows": "windows", "Darwin": "darwin"}.get(platform.system(), "linux")
+    url = _PLATFORM_TOOLS_URL.format(key)
+    zip_path = DATA_DIR / "platform-tools.zip"
+    print(f"Downloading Android platform-tools from {url} ...")
+    urllib.request.urlretrieve(url, zip_path)
+    with zipfile.ZipFile(zip_path) as z:
+        z.extractall(DATA_DIR)
+    zip_path.unlink()
+    adb = DATA_DIR / "platform-tools" / _ADB_NAME
+    adb.chmod(0o755)
+    return str(adb)
+
+
+def ensure_adb() -> str:
+    adb = find_adb()
+    if adb:
+        return adb
+    print("adb (Android platform-tools) was not found on this computer.")
+    if input("Download it from Google now? [Y/n] ").strip().lower() in ("", "y", "yes"):
+        return download_adb()
+    raise SystemExit("adb is required. Install Android platform-tools and run again.")
+
+
+def list_devices(adb: str) -> list[str]:
+    subprocess.run([adb, "start-server"], capture_output=True, timeout=30)
+    out = subprocess.run([adb, "devices"], capture_output=True, text=True, timeout=30).stdout
+    return [line.split()[0] for line in out.splitlines()[1:] if line.strip().endswith("device")]
+
+
+# ---- first-time setup ----
+
+def lan_ip() -> str:
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("10.255.255.255", 1))
+            return s.getsockname()[0]
+    except OSError:
+        return "<this computer's IP>"
+
+
+def _choose_devices(adb: str, settings: dict) -> None:
+    while True:
+        devices = list_devices(adb)
+        if len(devices) == 2:
+            settings["device_a"], settings["device_b"] = sorted(devices)
+            return
+        print(f"\nFound {len(devices)} device(s): {', '.join(devices) or 'none'}")
+        print("Start BOTH BlueStacks instances and enable 'Android Debug Bridge (ADB)' in each one's settings.")
+        choice = input("Press Enter to look again, or type two serials separated by a space: ").strip().split()
+        if len(choice) == 2:
+            settings["device_a"], settings["device_b"] = choice
+            return
+
+
+def ensure_setup() -> dict:
+    """Creates settings.json on first run (finds adb and the two devices, makes a token). Returns the settings."""
+    settings = load()
+    adb = ensure_adb()
+    if not settings["device_a"] or not settings["device_b"]:
+        print("First-time setup")
+        _choose_devices(adb, settings)
+    if not settings["token"]:
+        settings["token"] = secrets.token_urlsafe(12)
+    save(settings)
+    return settings
+
+
+def print_app_instructions(settings: dict) -> None:
+    ip, port, token = lan_ip(), settings["port"], settings["token"]
+    print("\n" + "=" * 64)
+    print("Smart AutoClicker setup (ADB action, on each device)")
+    print(f"  Bridge address : {ip}")
+    print(f"  Port           : {port}")
+    print(f"  Bridge token   : {token}")
+    print(f"  Commands       : stage-clear {settings['device_a']}   (on the device {settings['device_a']})")
+    print(f"                   stage-clear {settings['device_b']}   (on the device {settings['device_b']})")
+    print(f"Settings file: {SETTINGS_FILE}")
+    print("=" * 64 + "\n")
