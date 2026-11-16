@@ -12,11 +12,11 @@ jobs:
         include:
           - {os: macos-latest,   asset: dual-login-macos}
           - {os: windows-latest, asset: dual-login-windows.exe}
-          - {os: ubuntu-latest,  asset: dual-login-linux}
+          - {os: ubuntu-22.04,  asset: dual-login-linux}
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with: {python-version: "3.12"}
       - run: pip install pyinstaller
       - run: python build.py
@@ -24,7 +24,7 @@ jobs:
         shell: bash
         working-directory: dist
         run: mv dual-login* "${{ matrix.asset }}"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: ${{ matrix.asset }}
           path: dist/${{ matrix.asset }}
