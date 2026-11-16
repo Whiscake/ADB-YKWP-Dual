@@ -2,6 +2,7 @@ name: release
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
 permissions:
   contents: write
 jobs:
@@ -23,6 +24,12 @@ jobs:
         shell: bash
         working-directory: dist
         run: mv dual-login* "${{ matrix.asset }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: dist/${{ matrix.asset }}
       - uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
         with:
           files: dist/${{ matrix.asset }}
+          prerelease: ${{ contains(github.ref_name, '-') }}
