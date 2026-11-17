@@ -44,15 +44,24 @@ WATCHDOG_INTERVAL_SECONDS = 5.0
 EVENT_NAME = re.compile(r"[a-z0-9][a-z0-9-]{0,39}")
 
 
+def _port(serial: str) -> str:
+    return serial.rsplit("-", 1)[-1].rsplit(":", 1)[-1]
+
+
 def resolve_serial(name: str) -> str | None:
-    """Accepts a device serial, 'emulator-<port>', '127.0.0.1:<port>' or just the port number."""
+    """Accepts a device serial, '127.0.0.1:<port>', 'emulator-<port>' or just the port number.
+    BlueStacks lists an instance as 127.0.0.1:5555 while the emulator name for it is emulator-5554, one lower."""
     if name in DEVICES:
         return name
-    port = name.rsplit("-", 1)[-1].rsplit(":", 1)[-1]
+    port = _port(name)
     if not port.isdigit():
         return None
-    matches = [d for d in DEVICES if d.rsplit("-", 1)[-1].rsplit(":", 1)[-1] == port]
-    return matches[0] if len(matches) == 1 else None
+    wanted = [port] + ([str(int(port) + 1)] if name.startswith("emulator-") else [])
+    for candidate in wanted:
+        matches = [d for d in DEVICES if _port(d) == candidate]
+        if len(matches) == 1:
+            return matches[0]
+    return None
 
 
 def _other(serial: str) -> str:

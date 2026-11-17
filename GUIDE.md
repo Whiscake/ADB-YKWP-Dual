@@ -17,7 +17,7 @@ A custom fork of Smart AutoClicker 1.5.1 on each device tells the app what is ha
 ## Events
 
 Each event is an ADB action with the command `<event-name> <serial>`, for example `stage-clear emulator-5554`.
-The device can be written as its full serial, as `emulator-<port>`, or as just the port number, so `127.0.0.1:5605`, `emulator-5605` and `5605` all mean the same device.
+The device can be written as its full serial, as `emulator-<port>`, or as just the port number, so `127.0.0.1:5605`, `emulator-5605` and `5605` all mean the same device. BlueStacks lists an instance as `127.0.0.1:5555` but names it `emulator-5554` (one lower), so both of those also mean the same device.
 
 | Event | Send it when | What the app does |
 |---|---|---|
