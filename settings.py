@@ -7,6 +7,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import time
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -39,6 +40,14 @@ DEFAULTS = {
     "game_package": "com.Level5.YWP",
     "login_button_x": 525,
     "login_button_y": 1187,
+    "min_stage_seconds": 18.0,
+    "stuck_after_seconds": 40.0,
+    "alert_after_seconds": 240.0,
+    "alert_repeat_seconds": 300.0,
+    "both_at_login_window_seconds": 6.0,
+    "login_retry_seconds": 8.0,
+    "stage_clear_tap_delay_seconds": 0.20,
+    "tap_jitter_pixels": 8,
 }
 
 
@@ -110,6 +119,11 @@ def lan_ip() -> str:
 def _choose_devices(adb: str, settings: dict) -> None:
     while True:
         devices = list_devices(adb)
+        for _ in range(8):
+            if len(devices) >= 2:
+                break
+            time.sleep(1)
+            devices = list_devices(adb)
         if len(devices) == 2:
             settings["device_a"], settings["device_b"] = sorted(devices)
             return
