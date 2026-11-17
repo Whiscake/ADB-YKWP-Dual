@@ -44,6 +44,7 @@ DEFAULTS = {
     "stuck_after_seconds": 40.0,
     "alert_after_seconds": 240.0,
     "alert_repeat_seconds": 300.0,
+    "force_stop_after_seconds": 300.0,
     "both_at_login_window_seconds": 6.0,
     "login_retry_seconds": 8.0,
     "stage_clear_tap_delay_seconds": 0.20,
@@ -110,6 +111,17 @@ def list_devices(adb: str) -> list[str]:
     return [line.split()[0] for line in out.splitlines()[1:] if line.strip().endswith("device")]
 
 
+def connect_local_instances(adb: str) -> None:
+    """BlueStacks only shows up in `adb devices` once connected, so try the ports its instances listen on."""
+    for port in list(range(5555, 5656, 10)) + list(range(5554, 5586, 2)):
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=0.3):
+                pass
+        except OSError:
+            continue
+        subprocess.run([adb, "connect", f"127.0.0.1:{port}"], capture_output=True, timeout=30)
+
+
 # ---- first-time setup ----
 
 def lan_ip() -> str:
@@ -124,6 +136,9 @@ def lan_ip() -> str:
 def _choose_devices(adb: str, settings: dict) -> None:
     while True:
         devices = list_devices(adb)
+        if len(devices) < 2:
+            connect_local_instances(adb)
+            devices = list_devices(adb)
         for _ in range(8):
             if len(devices) >= 2:
                 break

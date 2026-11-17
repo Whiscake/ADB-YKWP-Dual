@@ -44,6 +44,17 @@ WATCHDOG_INTERVAL_SECONDS = 5.0
 EVENT_NAME = re.compile(r"[a-z0-9][a-z0-9-]{0,39}")
 
 
+def resolve_serial(name: str) -> str | None:
+    """Accepts a device serial, 'emulator-<port>', '127.0.0.1:<port>' or just the port number."""
+    if name in DEVICES:
+        return name
+    port = name.rsplit("-", 1)[-1].rsplit(":", 1)[-1]
+    if not port.isdigit():
+        return None
+    matches = [d for d in DEVICES if d.rsplit("-", 1)[-1].rsplit(":", 1)[-1] == port]
+    return matches[0] if len(matches) == 1 else None
+
+
 def _other(serial: str) -> str:
     return config.DEVICE_B if serial == config.DEVICE_A else config.DEVICE_A
 
@@ -57,6 +68,7 @@ class Coordinator:
         self.last_rejected: tuple[str, float] = ("", 0.0)
         self.stuck_since: float | None = None
         self.last_alert_at: float | None = None
+        self.last_force_stop_at: float | None = None
         self._lock = threading.Lock()
 
     @property
@@ -94,6 +106,7 @@ class Coordinator:
                 log.info("recovered after being stuck for %.0fs", time.time() - self.stuck_since)
             self.stuck_since = None
             self.last_alert_at = None
+            self.last_force_stop_at = None
             self.active = idle
             self.active_since = time.time()
             return f"ok: {cleared} -> {idle}"
@@ -123,6 +136,11 @@ class Coordinator:
             self.active = chosen
             self.active_since = time.time()
             self.last_login_tap = time.time()
+            if self.stuck_since is not None:
+                log.info("recovered after being stuck for %.0fs", time.time() - self.stuck_since)
+            self.stuck_since = None
+            self.last_alert_at = None
+            self.last_force_stop_at = None
             return "ok"
 
     def on_event(self, name: str, serial: str) -> str:
@@ -130,7 +148,8 @@ class Coordinator:
         return "ok"
 
     def watchdog_step(self) -> None:
-        """Alert-only: without screenshots we can't tell where a stuck device is, so never tap blindly."""
+        """Warns, alerts and force-stops the game on a device that stopped clearing stages. It never taps blindly."""
+        to_stop = None
         with self._lock:
             if self.active is None:
                 return
@@ -151,6 +170,19 @@ class Coordinator:
                     priority="urgent",
                 )
                 self.last_alert_at = now
+            if config.FORCE_STOP_AFTER_SECONDS > 0 and elapsed > config.FORCE_STOP_AFTER_SECONDS and (
+                self.last_force_stop_at is None or now - self.last_force_stop_at > config.FORCE_STOP_AFTER_SECONDS
+            ):
+                self.last_force_stop_at = now
+                to_stop = self.active
+        if to_stop:  # outside the lock: adb can take seconds and events shouldn't wait on it
+            log.error("%s still stuck after %.0fs, force-stopping %s; play resumes when both devices reach login",
+                      to_stop, elapsed, config.GAME_PACKAGE)
+            try:
+                adb.force_stop(to_stop, config.GAME_PACKAGE)
+            except Exception as exc:
+                log.error("force-stop of %s failed: %s", to_stop, exc)
+                notify.send(f"🚨 dual-login: could not force-stop {to_stop}: {exc}", priority="urgent")
 
 
 def watchdog_loop(coordinator: Coordinator) -> None:
@@ -195,8 +227,8 @@ def make_handler(coordinator: Coordinator):
                                 raw, len(given), len(config.BRIDGE_TOKEN))
                 return self._reply(401, "bad token")
             command = raw.split()
-            if len(command) == 2 and command[1].isdigit():
-                command[1] = f"emulator-{command[1]}"
+            if len(command) == 2:
+                command[1] = resolve_serial(command[1]) or command[1]
             if len(command) != 2 or not EVENT_NAME.fullmatch(command[0]) or command[1] not in DEVICES:
                 if raw != coordinator.last_rejected[0] or time.time() - coordinator.last_rejected[1] > 60:
                     coordinator.last_rejected = (raw, time.time())

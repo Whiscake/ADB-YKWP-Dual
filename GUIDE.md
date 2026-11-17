@@ -17,7 +17,7 @@ A custom fork of Smart AutoClicker 1.5.1 on each device tells the app what is ha
 ## Events
 
 Each event is an ADB action with the command `<event-name> <serial>`, for example `stage-clear emulator-5554`.
-The serial can be shortened to its number (`stage-clear 5554`).
+The device can be written as its full serial, as `emulator-<port>`, or as just the port number, so `127.0.0.1:5605`, `emulator-5605` and `5605` all mean the same device.
 
 | Event | Send it when | What the app does |
 |---|---|---|
@@ -47,7 +47,10 @@ tap again for `login_retry_seconds`. Keep `both_at_login_window_seconds` above t
 **Device stops clearing stages (stuck).** A check runs every 5 seconds.
 - After `stuck_after_seconds` with no clear on the active device, a warning is logged.
 - After `alert_after_seconds`, an alert is sent, repeated every `alert_repeat_seconds` while still stuck.
-- The next successful `stage-clear` logs the recovery and resets everything.
+- After `force_stop_after_seconds` (0 turns this off), the game on the stuck device is force-stopped, and again every
+  `force_stop_after_seconds` while still stuck. It then restarts at the login screen, and your AutoClicker's `login-screen`
+  events from both devices make the app tap login on the stuck one, which resumes play.
+- The next successful `stage-clear` or login tap logs the recovery and resets everything.
 
 **Wrong token or malformed command.** Rejected (HTTP 401 or 400) and logged at most once a minute. Nothing runs.
 
@@ -70,6 +73,7 @@ Close the app before editing. Delete the file to start setup over. Location: mac
 | `stuck_after_seconds` | 40 | No clear for this long: logged as stuck |
 | `alert_after_seconds` | 240 | No clear for this long: alert sent |
 | `alert_repeat_seconds` | 300 | Minimum gap between repeat alerts |
+| `force_stop_after_seconds` | 300 | No clear for this long: the game on that device is force-stopped so it returns to login. 0 disables |
 | `both_at_login_window_seconds` | 6 | Two `login-screen` events this close together mean both devices are at login |
 | `login_retry_seconds` | 8 | Minimum gap between login taps caused by `login-screen` events |
 | `points_per_clear` | 18 | Points you earn per stage clear; used for the points figures on the status screen |

@@ -243,6 +243,7 @@ To start over from scratch (new token, devices detected again), delete `settings
 | `stuck_after_seconds` | 40 | No clear for this long and the device is logged as stuck |
 | `alert_after_seconds` | 240 | No clear for this long and a phone alert is sent (if `ntfy_url` is set) |
 | `alert_repeat_seconds` | 300 | Minimum time between repeated alerts |
+| `force_stop_after_seconds` | 300 | No clear for this long: the game on that device is force-stopped so it returns to login. 0 disables |
 | `both_at_login_window_seconds` | 6 | Two `login-screen` reports this close together mean both devices are stuck at login |
 | `login_retry_seconds` | 8 | Minimum time between login taps made because of `login-screen` |
 | `login_button_x`, `login_button_y` | 525, 1187 | Where login is tapped, in device pixels. Change if your resolution differs |
@@ -255,7 +256,7 @@ The full list, with every option, is in [GUIDE.md](GUIDE.md#settings-reference-s
 
 ## Troubleshooting
 
-- **"Found 0 devices":** ADB is not switched on in BlueStacks (Settings → Advanced), or the instances are not running.
+- **"Found 0 devices":** ADB is not switched on in BlueStacks (Settings → Advanced), or the instances are not running. The app tries to connect to BlueStacks on its usual local ports (5555, 5565, 5575 and so on). If yours uses another port, BlueStacks shows it next to the ADB switch. Type both addresses at the prompt, for example `127.0.0.1:5555 127.0.0.1:5565`.
   Turn it on in both, start both, then press Enter in the app.
 - **Nothing happens on a stage clear:** the emulator cannot reach your computer. Check the bridge address and port, and
   that the firewall allows the app on Private networks. If `10.0.2.2` does not work, try the LAN address the app printed.
