@@ -7,8 +7,18 @@ the results animation, roughly halving the time per stage.
 Smart AutoClicker on each instance detects what is happening on screen and reports it to this app. The app does the
 handoff, watches for a stuck instance, and can send phone alerts through [ntfy.sh](https://ntfy.sh).
 
+## Quick start (already set up)
+
+| System | Command |
+|---|---|
+| Mac (keeps the Mac awake) | `caffeinate -i -s ~/Downloads/dual-login-macos` |
+| Windows | `cd %USERPROFILE%\Downloads` then `dual-login-windows.exe` (also set [sleep to Never](#keep-your-computer-awake)) |
+| From source | `python3 main.py` (`py main.py` on Windows) |
+
+Stop it with `Ctrl + C`.
+
 Contents: [What you need](#what-you-need) · [Install on Mac](#install-on-mac) · [Install on Windows](#install-on-windows) ·
-[Run from source](#run-from-source-instead-of-the-release) · [Inital Setup](#inital-setup) ·
+[Run from source](#run-from-source-instead-of-the-release) · [Inital Setup](#inital-setup) · [Keep awake](#keep-your-computer-awake) · [Status screen](#the-status-screen) ·
 [Integrating with Smart AutoClicker](#integrating-with-smart-autoclicker) · [Settings](#timings-and-settings) ·
 [Troubleshooting](#troubleshooting)
 
@@ -105,11 +115,27 @@ The first time you start the app (once):
 
 From then on just run the app again: it remembers everything. Leave the window open while playing.
 
+## Keep your computer awake
+
+The app only works while your computer is awake. If it goes to sleep, the emulators can no longer reach it, handoffs
+stop, and no alert is sent. The screen can turn off; the computer must not sleep.
+
+- **Mac:** start the app through `caffeinate`, which blocks sleep for as long as the app runs:
+
+  ```bash
+  caffeinate -i -s ~/Downloads/dual-login-macos
+  ```
+
+  (`-s` only works while the Mac is plugged in, so keep it on power.)
+- **Windows:** open **Settings → System → Power & battery → Screen, sleep, & hibernate timeouts** and set **Sleep** to
+  **Never** while plugged in. Laptops should stay plugged in.
+- **Linux:** run it through `systemd-inhibit --what=sleep ./dual-login-linux`.
+
 ## Integrating with Smart AutoClicker
 
 The app needs to be told what is happening on each device. You do that with an **ADB command** action in your macro.
-Both `stage-clear` and `login-screen` are needed for unattended running.
-`emulator-5574` on the other).
+Both `stage-clear` and `login-screen` are needed for unattended running. In each command, use that instance's own
+name (`emulator-5554` on one, `emulator-5574` on the other).
 
 The fields are the same for both; only **Name** and **ADB command** change:
 
@@ -153,6 +179,34 @@ login, because that is the normal idle state.
 
 Every situation, including what happens when something goes wrong, is covered in [GUIDE.md](GUIDE.md).
 
+## The status screen
+
+While the app runs, the terminal shows one live screen of stats
+
+```
+ADB-YKWP-Dual                                  2026-11-17 14:45:12
+------------------------------------------------------------------
+Bridge address : 10.0.2.2 (or 192.168.1.20)   Port: 8765
+Bridge token   : <your token>
+Devices        : emulator-5554, emulator-5574
+Status         : OK - emulator-5554 playing for 12s
+------------------------------------------------------------------
+This run       : 25 clears | ~450 points | last clear 51s ago
+Clear time     : avg 22.0s | fastest 21.0s | slowest 23.0s (last 24)
+Uptime (24h)   : 100.0% | downtime 0s
+Points         : ~2945/hour | ~70691/24h | by 2026-12-01 01:00: ~949162
+------------------------------------------------------------------
+Recent warnings: none
+```
+
+- **Status** shows `OK` or `STUCK` (no clear for a while).
+- **Bridge address, port and token** are always on screen, so you can copy them into Smart AutoClicker any time.
+- **Points** are calculated from your average clear time and the points you earn per clear. Tell the app your number
+  with `points_per_clear` in `settings.json`. To also see how many points you will have by a certain date, set
+  `forecast_target_datetime` (for example `2026-12-01 00:00`).
+- **Recent warnings** shows the last few problems, such as a wrong token. Everything is also saved in the log file.
+- The full scrolling log is still available: start the app with `--log` (`python3 main.py --log`).
+
 ## Timings and settings
 
 All timings and options live in one file, **`settings.json`**. It is created automatically on first run.
@@ -165,7 +219,7 @@ All timings and options live in one file, **`settings.json`**. It is created aut
 | Windows | `%APPDATA%\dual-login\` |
 | Linux | `~/.config/dual-login/` |
 
-The app prints the exact path of the file in the box at startup. The same folder holds `logs/coordinator.log`.
+The app prints the exact path of the file in the box at startup. The same folder holds `logs/coordinator.log`, the full log that the status screen is built from.
 
 **Open it on Mac:** in Finder press `Cmd + Shift + G`, paste `~/Library/Application Support/dual-login/`, press Enter,
 then right-click `settings.json` → **Open With → TextEdit**.
@@ -194,6 +248,8 @@ To start over from scratch (new token, devices detected again), delete `settings
 | `login_button_x`, `login_button_y` | 525, 1187 | Where login is tapped, in device pixels. Change if your resolution differs |
 | `port` | 8765 | Port the app listens on |
 | `ntfy_url` | blank | Your ntfy.sh topic URL for alerts on your phone. Blank means no alerts |
+| `points_per_clear` | 18 | Points you earn per stage clear, used for the points figures on the status screen |
+| `forecast_target_datetime` | blank | Optional date like `2026-12-01 01:00` to forecast points by. Blank shows per hour and per day only |
 
 The full list, with every option, is in [GUIDE.md](GUIDE.md#settings-reference-settingsjson).
 

@@ -7,7 +7,8 @@ import settings
 def run() -> None:
     first_run = not settings.SETTINGS_FILE.exists()
     cfg = settings.ensure_setup()
-    settings.print_app_instructions(cfg)
+    if first_run or "--log" in sys.argv:
+        settings.print_app_instructions(cfg)
     if first_run:
         input("Enter these into Smart AutoClicker, then press Enter to start. ")
     import handoff

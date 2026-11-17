@@ -48,6 +48,11 @@ DEFAULTS = {
     "login_retry_seconds": 8.0,
     "stage_clear_tap_delay_seconds": 0.20,
     "tap_jitter_pixels": 8,
+    "points_per_clear": 22,
+    "forecast_target_datetime": "",
+    "stats_interval_seconds": 5.0,
+    "stats_clear_sample_size": 100,
+    "stats_uptime_window_hours": 24.0,
 }
 
 

@@ -4,8 +4,6 @@ Smart AutoClicker on each device sends events to this server as "<event-name> <s
 
     stage-clear     the device finished a stage. The other device is logged in and the game on this one is stopped
     login-screen    the login screen is visible; used to work out which device is idle
-    login-success   the device finished logging in
-    hold            the device needs a person; pauses stuck detection and optionally sends an alert
     <anything-else> logged only
 
 Alerts are sent through ntfy.sh when a device stops progressing, if a topic URL is configured.
@@ -27,6 +25,7 @@ import adb
 import config
 import notify
 import settings
+import stats
 
 LOG_DIR = settings.DATA_DIR / "logs"
 LOG_DIR.mkdir(exist_ok=True)
@@ -34,12 +33,11 @@ LOG_DIR.mkdir(exist_ok=True)
 log = logging.getLogger("coordinator")
 log.setLevel(logging.INFO)
 _formatter = logging.Formatter("%(asctime)s %(message)s")
-for _handler in (
-    logging.StreamHandler(),
-    logging.handlers.RotatingFileHandler(LOG_DIR / "coordinator.log", maxBytes=5 * 1024 * 1024, backupCount=5),
-):
-    _handler.setFormatter(_formatter)
-    log.addHandler(_handler)
+_file_handler = logging.handlers.RotatingFileHandler(
+    LOG_DIR / "coordinator.log", maxBytes=5 * 1024 * 1024, backupCount=5
+)
+_file_handler.setFormatter(_formatter)
+log.addHandler(_file_handler)
 
 DEVICES = (config.DEVICE_A, config.DEVICE_B)
 WATCHDOG_INTERVAL_SECONDS = 5.0
@@ -54,13 +52,10 @@ class Coordinator:
     def __init__(self, active: str | None) -> None:
         self.active = active
         self.active_since = time.time()
-        self.login_pending = False
         self.last_login_tap = 0.0
         self.login_screen_at: dict[str, float] = {}
         self.last_rejected: tuple[str, float] = ("", 0.0)
         self.stuck_since: float | None = None
-        self.last_hold_at = 0.0
-        self.last_hold_alert_at = 0.0
         self.last_alert_at: float | None = None
         self._lock = threading.Lock()
 
@@ -87,7 +82,6 @@ class Coordinator:
             x, y = config.LOGIN_BUTTON_COORDS
             log.info("tapping login on %s at (%d, %d)", idle, x, y)
             adb.tap(idle, x, y)
-            self.login_pending = True
             self.last_login_tap = time.time()
             log.info("force-stopping %s on %s to skip results animation", config.GAME_PACKAGE, cleared)
             try:
@@ -103,14 +97,6 @@ class Coordinator:
             self.active = idle
             self.active_since = time.time()
             return f"ok: {cleared} -> {idle}"
-
-    def on_login_success(self, serial: str) -> str:
-        with self._lock:
-            if serial != self.active or not self.login_pending:
-                return f"ignored: no login pending on {serial}"
-            log.info("login confirmed on %s after %.1fs", serial, time.time() - self.last_login_tap)
-            self.login_pending = False
-            return "ok"
 
     def on_login_screen(self, serial: str) -> str:
         """Never taps login on its own: login is only tapped after a stage clear, or when both devices are at login."""
@@ -136,24 +122,7 @@ class Coordinator:
             adb.tap(chosen, x, y)
             self.active = chosen
             self.active_since = time.time()
-            self.login_pending = True
             self.last_login_tap = time.time()
-            return "ok"
-
-    def on_hold(self, serial: str) -> str:
-        with self._lock:
-            if serial != self.active:
-                return f"ignored: {serial} is not the active device ({self.active})"
-            now = time.time()
-            if now - self.last_hold_at > config.HOLD_GAP_SECONDS:
-                log.warning("%s reports it needs a person, holding stuck detection", serial)
-            self.last_hold_at = now
-            self.active_since = now
-            self.stuck_since = None
-            self.last_alert_at = None
-            if config.HOLD_NOTIFY and now - self.last_hold_alert_at > config.ALERT_REPEAT_SECONDS:
-                self.last_hold_alert_at = now
-                notify.send(f"🧑 dual-login: {serial} needs you (not treated as stuck)", priority="urgent")
             return "ok"
 
     def on_event(self, name: str, serial: str) -> str:
@@ -243,10 +212,6 @@ def make_handler(coordinator: Coordinator):
             try:
                 if name == "stage-clear":
                     outcome = coordinator.on_stage_clear(serial)
-                elif name == "login-success":
-                    outcome = coordinator.on_login_success(serial)
-                elif name == "hold":
-                    outcome = coordinator.on_hold(serial)
                 elif name == "login-screen":
                     outcome = coordinator.on_login_screen(serial)
                 else:
@@ -266,6 +231,8 @@ def main() -> None:
     ap.add_argument("--active", choices=DEVICES, default=None,
                     help="device currently playing a stage. Optional: left out, it is learned from the first "
                          "stage-clear event, or from a login-screen event on the idle device")
+    ap.add_argument("--log", action="store_true",
+                    help="print the full scrolling log instead of the live stats screen")
     args = ap.parse_args()
     if not config.BRIDGE_TOKEN:
         raise SystemExit("No bridge token: run main.py (or the app) so first-run setup can create one.")
@@ -280,6 +247,12 @@ def main() -> None:
              coordinator.active, coordinator.idle, config.BRIDGE_HOST, config.BRIDGE_PORT)
 
     threading.Thread(target=watchdog_loop, args=(coordinator,), daemon=True).start()
+    if args.log:
+        console_handler = logging.StreamHandler()
+        console_handler.setFormatter(_formatter)
+        log.addHandler(console_handler)
+    else:
+        stats.start_screen(coordinator)
     ThreadingHTTPServer((config.BRIDGE_HOST, config.BRIDGE_PORT), make_handler(coordinator)).serve_forever()
 
 

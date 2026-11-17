@@ -22,8 +22,7 @@ The serial can be shortened to its number (`stage-clear 5554`).
 | Event | Send it when | What the app does |
 |---|---|---|
 | `stage-clear` | The device clears a stage | Runs the handoff above. **Required.** |
-| `login-screen` | The login button is visible | Tracks which device is idle. Never taps login on its own (see "Both at login"). Optional. |
-| `login-success` | The device finished logging in | Confirms the handoff and logs how long it took. Optional. |
+| `login-screen` | The login button is visible | Tracks which device is idle, and restarts play when both devices are at login (see "Both at login"). Recommended. |
 
 ## Situations
 
@@ -73,6 +72,11 @@ Close the app before editing. Delete the file to start setup over. Location: mac
 | `alert_repeat_seconds` | 300 | Minimum gap between repeat alerts |
 | `both_at_login_window_seconds` | 6 | Two `login-screen` events this close together mean both devices are at login |
 | `login_retry_seconds` | 8 | Minimum gap between login taps caused by `login-screen` events |
+| `points_per_clear` | 18 | Points you earn per stage clear; used for the points figures on the status screen |
+| `forecast_target_datetime` | blank | Optional end date, like `2026-12-01 01:00`. Adds a "points by this date" figure. Blank shows only per hour and per day |
+| `stats_interval_seconds` | 5 | How often the status screen refreshes |
+| `stats_clear_sample_size` | 100 | How many recent clears are used for the average, fastest and slowest times |
+| `stats_uptime_window_hours` | 24 | How far back uptime is measured |
 
 New keys are added to your file automatically the next time the app starts.
 
@@ -80,8 +84,11 @@ New keys are added to your file automatically the next time the app starts.
 
 `logs/coordinator.log` in the same folder, rotated at 5 MB with 5 backups. It records handoffs, logins, stuck
 warnings, alerts, rejected requests and unknown events.
+The log is written to the file only. The terminal shows the status screen (see the README); start the app with `--log` to see
+the full scrolling log there instead.
 
 ## Command line
 
 `dual-login --active emulator-5554` sets the starting active device (optional).
+`dual-login --log` shows the scrolling log instead of the status screen.
 `GET http://<bridge address>:<port>/health` returns `ok active=<serial>` and is handy for checking the app is up.
