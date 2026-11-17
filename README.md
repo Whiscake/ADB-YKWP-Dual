@@ -264,3 +264,7 @@ The full list, with every option, is in [GUIDE.md](GUIDE.md#settings-reference-s
 - **Wrong tap position:** adjust `login_button_x` and `login_button_y`.
 - **Security:** the token stops other devices on your network from tapping your emulators. Keep it private and do not
   run the app on untrusted Wi-Fi / networks.
+
+## License
+
+[PolyForm Noncommercial 1.0.0](LICENSE). You may use, modify and share this software for any non-commercial purpose, and it comes with no warranty or liability. You may not sell it or use it commercially, including modified versions.
