@@ -195,11 +195,24 @@ class Coordinator:
 
 
 def watchdog_loop(coordinator: Coordinator) -> None:
+    down: set[str] = set()  # devices adb can't reach, so a persistent outage is logged once, not every tick
     while True:
         try:
             coordinator.watchdog_step()
         except Exception as exc:
             log.error("watchdog error: %s", exc, exc_info=True)
+        try:
+            # adb forgets TCP devices when its server restarts or the link drops; nothing else would reconnect them
+            for serial, ok in adb.reconnect_missing(DEVICES).items():
+                if ok:
+                    down.discard(serial)
+                    log.warning("%s had dropped off adb, reconnected", serial)
+                elif serial not in down:
+                    down.add(serial)
+                    log.error("%s is not attached to adb and reconnecting failed, retrying every %.0fs",
+                              serial, WATCHDOG_INTERVAL_SECONDS)
+        except Exception as exc:
+            log.error("adb reconnect check failed: %s", exc)
         time.sleep(WATCHDOG_INTERVAL_SECONDS)
 
 
@@ -280,7 +293,10 @@ def main() -> None:
 
     adb.restart_server()
     for serial in DEVICES:
-        adb.connect(serial)
+        if adb.ensure_connected(serial):
+            log.info("%s attached to adb", serial)
+        else:
+            log.error("%s could not be attached to adb; the watchdog keeps retrying", serial)
 
     coordinator = Coordinator(args.active)
     coordinator.active_since = time.time() - config.INITIAL_POLL_DELAY_SECONDS
