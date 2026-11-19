@@ -5,6 +5,7 @@ import platform
 import secrets
 import shutil
 import socket
+import ssl
 import subprocess
 import sys
 import time
@@ -93,12 +94,25 @@ def find_adb() -> str | None:
     return shutil.which("adb")
 
 
+def download(url: str, target: Path) -> None:
+    """Downloads with certifi's certificates, which a packaged build needs on macOS and Linux."""
+    try:
+        import certifi
+        context = ssl.create_default_context(cafile=certifi.where())
+    except Exception:
+        context = None
+    partial = target.with_name(target.name + ".part")
+    with urllib.request.urlopen(url, timeout=60, context=context) as response, open(partial, "wb") as out:
+        shutil.copyfileobj(response, out)
+    partial.replace(target)
+
+
 def download_adb() -> str:
     key = {"Windows": "windows", "Darwin": "darwin"}.get(platform.system(), "linux")
     url = _PLATFORM_TOOLS_URL.format(key)
     zip_path = DATA_DIR / "platform-tools.zip"
     print(f"Downloading Android platform-tools from {url} ...")
-    urllib.request.urlretrieve(url, zip_path)
+    download(url, zip_path)
     with zipfile.ZipFile(zip_path) as z:
         z.extractall(DATA_DIR)
     zip_path.unlink()

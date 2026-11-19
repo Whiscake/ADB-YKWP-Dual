@@ -1,6 +1,5 @@
 """Emulators page: pick the two instances to run and install the clicker on them."""
 import tkinter as tk
-import urllib.request
 from tkinter import ttk
 
 import emulators
@@ -162,9 +161,7 @@ class EmulatorsPage(ui.Page):
         adb = self.app.adb
 
         def job():
-            partial = APK_FILE.with_suffix(".part")
-            urllib.request.urlretrieve(emulators.CLICKER_APK_URL, partial)
-            partial.replace(APK_FILE)
+            settings.download(emulators.CLICKER_APK_URL, APK_FILE)
             return [(e.name, emulators.install_apk(adb, e.serial, APK_FILE)) for e in targets]
 
         def done(results) -> None:
