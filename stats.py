@@ -156,11 +156,10 @@ class RecentWarnings(logging.Handler):
 
 def render(coordinator, recent: RecentWarnings) -> list:
     stats = compute_stats()
-    lan = settings.lan_ip()
     lines = [
         f"ADB-YKWP-Dual{datetime.now().strftime('%Y-%m-%d %H:%M:%S'):>53}",
         RULE,
-        f"Bridge address : 10.0.2.2 (or {lan})   Port: {config.BRIDGE_PORT}",
+        f"Bridge address : 127.0.0.1 (through adb reverse)   Port: {config.BRIDGE_PORT}",
         f"Bridge token   : {config.BRIDGE_TOKEN}",
         f"Devices        : {config.DEVICE_A}, {config.DEVICE_B}",
         f"Status         : {_status(coordinator)}",

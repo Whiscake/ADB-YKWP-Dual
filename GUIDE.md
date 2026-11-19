@@ -1,98 +1,124 @@
 # ADB-YKWP-Dual: full guide
 
-How the app behaves in every situation, and every setting you can change. For installing and first-time setup, see the [README](README.md).
+How the program behaves in every situation, and every setting you can change. For installing and the first start, see
+the [README](README.md).
 
 ## Overview
 
-Two BlueStacks instances, **A** and **B** interchange playing the game. One is **active** (playing a stage), while the other is **idle** (sitting at the
-login screen). When the active one clears a stage, the app:
+Two emulator instances, **A** and **B**, take turns playing the game. One is **playing** a stage while the other is
+**waiting** at the login screen. When the playing one clears a stage, the program:
 
 1. waits a short delay (`stage_clear_tap_delay_seconds`)
-2. taps the login button on the idle device, which becomes the new active device
-3. force-stops the game on the device that just cleared, skipping the results animation
+2. taps the login button on the waiting instance, which starts playing
+3. closes the game on the instance that just cleared, skipping the results animation
 4. swaps the roles
 
-A custom fork of Smart AutoClicker 1.5.1 on each device tells the app what is happening by sending **events**.
+A fork of Smart AutoClicker on each instance tells the program what is happening by sending **events**. The clicker
+reaches the program at `127.0.0.1` through `adb reverse`, which the program sets up on Start, after a restart and
+whenever the link drops, so firewalls and emulator network settings do not matter.
 
 ## Events
 
 Each event is an ADB action with the command `<event-name> <serial>`, for example `stage-clear emulator-5554`.
-The device can be written as its full serial, as `emulator-<port>`, or as just the port number, so `127.0.0.1:5605`, `emulator-5605` and `5605` all mean the same device. BlueStacks lists an instance as `127.0.0.1:5555` but names it `emulator-5554` (one lower), so both of those also mean the same device.
+**Prepare config** (the ✎ page) adds them for you. The instance can be written as its full serial, as `emulator-<port>`
+or as the port number alone, so `127.0.0.1:5555`, `emulator-5554` and `5554` all mean the same instance.
 
-| Event | Send it when | What the app does |
+| Event | Sent when | What the program does |
 |---|---|---|
-| `stage-clear` | The device clears a stage | Runs the handoff above. **Required.** |
-| `login-screen` | The login button is visible | Tracks which device is idle, and restarts play when both devices are at login (see "Both at login"). Recommended. |
+| `stage-clear` | Last action of the event that presses OK on the stage clear | Runs the handoff above. **Required.** |
+| `login-screen` | Every 2 s while the login screen is visible | Works out which instance is waiting, and restarts play when both are at login. Recommended. |
+| anything else | Whenever you add one | Logged only |
+
+To add an event by hand, add an ADB action to the event with the command and leave address, port and token empty: the
+clicker then uses the ones the program sent it.
 
 ## Situations
 
-**Normal clear.** The active device sends `stage-clear`. Handoff runs, roles swap.
+**Normal clear.** The playing instance sends `stage-clear`. Handoff runs, roles swap.
 
-**Clear sent too early.** A `stage-clear` arriving less than `min_stage_seconds` after that device became active is
-ignored, since it can't be a real clear. This also drops duplicate events for one clear.
+**Clear sent too early.** A `stage-clear` arriving less than `min_stage_seconds` after that instance started playing
+is ignored, since it can't be a real clear. This also drops duplicate events for one clear.
 
-**Clear from the idle device.** Ignored. Only the active device can trigger a handoff.
+**Clear from the waiting instance.** Ignored. Only the playing instance can trigger a handoff.
 
-**First start, active device unknown.** Roles are learned from the first `stage-clear` (that device is active) or from a
-`login-screen` event on one device (the other must be playing). You can also start with
-`--active emulator-5554` to set it directly.
+**First start, roles unknown.** Roles are learned from the first `stage-clear` (that instance is playing) or from a
+`login-screen` on one instance (the other one must be playing).
 
-**Both devices at the login screen.** If both send `login-screen` within `both_at_login_window_seconds` of each other,
-neither is playing, so the app taps login on one of them (the one it believed active, otherwise device A). It will not
-tap again for `login_retry_seconds`. Keep `both_at_login_window_seconds` above the repeat interval of your
-`login-screen` macro action.
+**Both instances at the login screen.** If both send `login-screen` within `both_at_login_window_seconds` of each
+other, neither is playing, so the program taps login on one of them (the one it believed was playing, otherwise A).
+It does not tap again for `login_retry_seconds`.
 
-**Only one device at the login screen.** Nothing is tapped. That device is simply the idle one.
+**Only one instance at the login screen.** Nothing is tapped. That instance is simply the waiting one.
 
-**Device stops clearing stages (stuck).** A check runs every 5 seconds.
-- After `stuck_after_seconds` with no clear on the active device, a warning is logged.
-- After `alert_after_seconds`, an alert is sent, repeated every `alert_repeat_seconds` while still stuck.
-- After `force_stop_after_seconds` (0 turns this off), the game on the stuck device is force-stopped, and again every
-  `force_stop_after_seconds` while still stuck. It then restarts at the login screen, and your AutoClicker's `login-screen`
-  events from both devices make the app tap login on the stuck one, which resumes play.
-- The next successful `stage-clear` or login tap logs the recovery and resets everything.
+**Playing instance stops clearing stages (stuck).** A check runs every 5 seconds.
+- After `stuck_after_seconds` with no clear, a warning is logged and the status turns red.
+- After `alert_after_seconds`, a phone alert is sent, repeated every `alert_repeat_seconds` while still stuck.
+- After `force_stop_after_seconds` (0 turns this off), the game is closed, and again every `force_stop_after_seconds`
+  while still stuck. The instance goes back to the login screen, and the `login-screen` events of both instances make
+  the program tap login again.
+- The next stage clear or login tap logs the recovery and resets everything.
 
-**Wrong token or malformed command.** Rejected (HTTP 401 or 400) and logged at most once a minute. Nothing runs.
+**Periodic restart (LDPlayer only).** With *Restart the emulators regularly* on, every `restart_every_minutes` a
+restart round starts, or right away with **Restart both now**:
+1. The waiting instance restarts while the other keeps playing. Its stage clears are not handed over and the stuck
+   checks are paused meanwhile.
+2. The program waits for Android and for the clicker's accessibility service, links the clicker again, has it resume
+   its last config, and opens the game.
+3. At the next handoff the other instance is the waiting one, and it restarts the same way.
+4. The round ends; the next starts `restart_every_minutes` later.
 
-## Settings reference (`settings.json`)
+An instance that is not a running LDPlayer instance is never restarted, and the settings page will not turn the option
+on for it. If a restarting instance is not back within `restart_boot_timeout_seconds`, an alert is sent. If the
+clicker's accessibility service does not come back, the log asks you to turn it on by hand.
 
-Close the app before editing. Delete the file to start setup over. Location: macOS
-`~/Library/Application Support/dual-login/`, Windows `%APPDATA%\dual-login\`, Linux `~/.config/dual-login/`.
+**An instance drops off adb.** The program reconnects it every 5 seconds and links its clicker again when it is back.
+
+**Wrong token or malformed command.** Rejected and logged at most once a minute. Nothing runs.
+
+## Settings reference
+
+Change them on the **⚙** page; each has an ⓘ explaining it. They are stored in `settings.json`: Windows
+`%APPDATA%\dual-login\`, macOS `~/Library/Application Support/dual-login/`, Linux `~/.config/dual-login/`. Delete the
+file to start over with a new token.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `device_a`, `device_b` | detected | ADB serials of the two instances |
-| `token` | generated | Secret the AutoClicker must send. Must match its "Bridge token" |
-| `port` | 8765 | Port the app listens on. Change it in the AutoClicker too |
-| `game_package` | `com.Level5.YWP` | Android package force-stopped after a clear |
-| `login_button_x`, `login_button_y` | 525, 1187 | Where login is tapped, in device pixels. Adjust for a different resolution |
+| `device_a`, `device_b` | picked | adb serials of the two instances (⧉ page) |
+| `device_a_name`, `device_b_name` | picked | Their names, shown on the panel and in the log |
+| `token` | generated | Secret the clickers send with every event; sent to them on Start |
+| `port` | 8765 | Port the program listens on. Applies after Stop and Start |
+| `game_package` | `com.Level5.YWP` | Android package closed after a clear |
+| `login_button_x`, `login_button_y` | 525, 1187 | Where login is tapped, in device pixels. 660, 1484 on 900x1600 |
+| `tap_jitter_pixels` | 8 | Random offset added to each tap. 0 turns it off |
 | `ntfy_url` | blank | Your ntfy.sh topic URL for phone alerts. Blank means no alerts |
-| `min_stage_seconds` | 18 | Clears sooner than this after a device becomes active are ignored. Set just under your fastest real stage time |
-| `stage_clear_tap_delay_seconds` | 0.2 | Pause between detecting a clear and tapping login |
-| `tap_jitter_pixels` | 8 | Random offset added to each tap so taps aren't pixel-identical. 0 disables |
-| `stuck_after_seconds` | 40 | No clear for this long: logged as stuck |
+| `min_stage_seconds` | 18 | Clears sooner than this after an instance starts playing are ignored |
+| `stage_clear_tap_delay_seconds` | 0.2 | Pause between a clear and the login tap |
+| `stuck_after_seconds` | 40 | No clear for this long: shown as stuck |
 | `alert_after_seconds` | 240 | No clear for this long: alert sent |
-| `alert_repeat_seconds` | 300 | Minimum gap between repeat alerts |
-| `force_stop_after_seconds` | 300 | No clear for this long: the game on that device is force-stopped so it returns to login. 0 disables |
-| `both_at_login_window_seconds` | 6 | Two `login-screen` events this close together mean both devices are at login |
+| `alert_repeat_seconds` | 300 | Minimum gap between repeated alerts |
+| `force_stop_after_seconds` | 300 | No clear for this long: the game is closed. 0 turns it off |
+| `both_at_login_window_seconds` | 6 | Two `login-screen` events this close together mean both instances are at login |
 | `login_retry_seconds` | 8 | Minimum gap between login taps caused by `login-screen` events |
-| `points_per_clear` | 18 | Points you earn per stage clear; used for the points figures on the status screen |
-| `forecast_target_datetime` | blank | Optional end date, like `2026-12-01 01:00`. Adds a "points by this date" figure. Blank shows only per hour and per day |
-| `stats_interval_seconds` | 5 | How often the status screen refreshes |
-| `stats_clear_sample_size` | 100 | How many recent clears are used for the average, fastest and slowest times |
-| `stats_uptime_window_hours` | 24 | How far back uptime is measured |
-
-New keys are added to your file automatically the next time the app starts.
+| `restart_enabled` | false | Restart the instances regularly (LDPlayer only) |
+| `restart_every_minutes` | 120 | Time between two restart rounds |
+| `restart_boot_timeout_seconds` | 240 | How long a restarting instance may take to come back |
+| `points_per_clear` | 22 | Points one stage clear gives you |
+| `forecast_target_datetime` | blank | End date like `2026-12-31 23:59` for the points forecast |
+| `stats_interval_seconds` | 5 | How often the stats refresh |
+| `stats_clear_sample_size` | 100 | How many recent clears the clear times are computed from |
+| `stats_uptime_window_hours` | 24 | How far back uptime and restarts are counted |
+| `start_automatically` | true | Start as soon as the program opens |
+| `write_logs` | true | Write the log files. The stats are computed from them |
+| `tutorial_done` | false | Set once the tutorial is finished or skipped |
 
 ## Logs
 
-`logs/coordinator.log` in the same folder, rotated at 5 MB with 5 backups. It records handoffs, logins, stuck
-warnings, alerts, rejected requests and unknown events.
-The log is written to the file only. The terminal shows the status screen (see the README); start the app with `--log` to see
-the full scrolling log there instead.
+`logs/coordinator.log` in the same folder. A new file starts every midnight and files older than 3 days are deleted,
+so the folder stays small. It records handoffs, logins, stuck warnings, restarts, alerts, rejected requests and
+unknown events. The panel's Log shows the same lines.
 
 ## Command line
 
-`dual-login --active emulator-5554` sets the starting active device (optional).
-`dual-login --log` shows the scrolling log instead of the status screen.
-`GET http://<bridge address>:<port>/health` returns `ok active=<serial>` and is handy for checking the app is up.
+The window is the normal way to run it. From source, `python3 main.py --console` runs without a window and shows a
+status screen in the terminal, and `--log` prints the scrolling log instead. `GET http://127.0.0.1:<port>/health`
+returns `ok active=<serial>` and is handy to check the program is up.

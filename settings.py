@@ -150,15 +150,6 @@ def connect_local_instances(adb: str) -> None:
 
 # ---- first-time setup ----
 
-def lan_ip() -> str:
-    try:
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-            s.connect(("10.255.255.255", 1))
-            return s.getsockname()[0]
-    except OSError:
-        return "<this computer's IP>"
-
-
 def _choose_devices(adb: str, settings: dict, pick_devices) -> None:
     while True:
         devices = list_devices(adb)
@@ -192,10 +183,10 @@ def ensure_setup(confirm_download=_console_download_adb, pick_devices=_console_p
 
 
 def print_app_instructions(settings: dict) -> None:
-    ip, port, token = lan_ip(), settings["port"], settings["token"]
+    port, token = settings["port"], settings["token"]
     print("\n" + "=" * 64)
     print("Smart AutoClicker setup (ADB action, on each device)")
-    print(f"  Bridge address : {ip}")
+    print("  Bridge address : 127.0.0.1 (linked through adb reverse on start)")
     print(f"  Port           : {port}")
     print(f"  Bridge token   : {token}")
     print(f"  Commands       : stage-clear {settings['device_a']}   (on the device {settings['device_a']})")
