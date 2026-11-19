@@ -5,7 +5,7 @@ import sys
 
 name = "dual-login"
 subprocess.run(
-    [sys.executable, "-m", "PyInstaller", "--onefile", "--console", "--name", name, "--clean", "main.py"],
+    [sys.executable, "-m", "PyInstaller", "--onefile", "--windowed", "--name", name, "--clean", "main.py"],
     check=True,
 )
 print(f"\nBuilt dist/{name}{'.exe' if platform.system() == 'Windows' else ''}")

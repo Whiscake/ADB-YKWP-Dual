@@ -69,5 +69,78 @@ def tap(serial: str, x: int, y: int) -> None:
     time.sleep(TAP_SETTLE_SECONDS)
 
 
+CLICKER_PACKAGES = ("com.puni.smartautoclicker.debug", "com.puni.smartautoclicker")
+BRIDGE_RECEIVER = "com.buzbuz.smartautoclicker.BridgeSettingsReceiver"
+
+
+def reverse(serial: str, port: int) -> None:
+    """Makes 127.0.0.1:<port> on the device reach this computer through adb, on any emulator and past any firewall."""
+    _device_call(serial, "reverse", f"tcp:{port}", f"tcp:{port}")
+
+
+def is_reversed(serial: str, port: int) -> bool:
+    out = subprocess.run([ADB_BIN, "-s", serial, "reverse", "--list"], capture_output=True, text=True, check=False,
+                         timeout=ADB_TIMEOUT_SECONDS).stdout
+    return f"tcp:{port} tcp:{port}" in out
+
+
+def push_bridge(serial: str, port: int, token: str) -> None:
+    """Gives the clicker the bridge address, port and token. Only adb may send this (the receiver requires DUMP)."""
+    for package in CLICKER_PACKAGES:
+        _run("-s", serial, "shell", "am", "broadcast", "-a", "com.buzbuz.smartautoclicker.SET_BRIDGE",
+             "-n", f"{package}/{BRIDGE_RECEIVER}", "--es", "host", "127.0.0.1", "--ei", "port", str(port),
+             "--es", "token", token, check=False)
+
+
+def installed_clicker(serial: str) -> str | None:
+    out = subprocess.run([ADB_BIN, "-s", serial, "shell", "pm", "list", "packages"], capture_output=True, text=True,
+                         check=False, timeout=ADB_TIMEOUT_SECONDS).stdout.split()
+    return next((package for package in CLICKER_PACKAGES if f"package:{package}" in out), None)
+
+
+def _shell_output(serial: str, *args: str) -> str:
+    try:
+        return subprocess.run([ADB_BIN, "-s", serial, "shell", *args], capture_output=True, text=True, check=False,
+                              timeout=ADB_TIMEOUT_SECONDS).stdout.strip()
+    except subprocess.TimeoutExpired:
+        return ""
+
+
+def wait_until(check, timeout: float, interval: float = 3.0) -> bool:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if check():
+            return True
+        time.sleep(interval)
+    return False
+
+
+def uptime(serial: str) -> float | None:
+    """Seconds since the emulator last started."""
+    value = _shell_output(serial, "cat", "/proc/uptime").split()
+    try:
+        return float(value[0]) if value else None
+    except ValueError:
+        return None
+
+
+def booted(serial: str) -> bool:
+    return _shell_output(serial, "getprop", "sys.boot_completed") == "1"
+
+
+def clicker_service_ready(serial: str, package: str) -> bool:
+    return "SmartAutoClickerService" in _shell_output(serial, "dumpsys", "activity", "services", package)
+
+
+def resume_clicker(serial: str, package: str) -> None:
+    """Lets the clicker record the screen without the consent dialog, then has it resume its last scenario."""
+    _device_call(serial, "shell", "appops", "set", package, "PROJECT_MEDIA", "allow")
+    _device_call(serial, "shell", "am", "start", "-n", f"{package}/com.buzbuz.smartautoclicker.activity.ResumeActivity")
+
+
+def start_game(serial: str, package: str) -> None:
+    _device_call(serial, "shell", "monkey", "-p", package, "-c", "android.intent.category.LAUNCHER", "1")
+
+
 def force_stop(serial: str, package: str) -> None:
     _device_call(serial, "shell", "am", "force-stop", package)

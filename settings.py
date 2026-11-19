@@ -34,6 +34,11 @@ SETTINGS_FILE = DATA_DIR / "settings.json"
 DEFAULTS = {
     "device_a": "",
     "device_b": "",
+    "device_a_name": "",
+    "device_b_name": "",
+    "tutorial_done": False,
+    "start_automatically": True,
+    "write_logs": True,
     "token": "",
     "port": 8765,
     "ntfy_url": "",
@@ -54,6 +59,9 @@ DEFAULTS = {
     "stats_interval_seconds": 5.0,
     "stats_clear_sample_size": 100,
     "stats_uptime_window_hours": 24.0,
+    "restart_enabled": False,
+    "restart_every_minutes": 120,
+    "restart_boot_timeout_seconds": 240,
 }
 
 
@@ -95,12 +103,30 @@ def download_adb() -> str:
     return str(adb)
 
 
-def ensure_adb() -> str:
+def _console_download_adb() -> bool:
+    print("adb (Android platform-tools) was not found on this computer.")
+    return input("Download it from Google now? [Y/n] ").strip().lower() in ("", "y", "yes")
+
+
+def _console_pick_devices(devices: list[str]) -> list[str] | None:
+    print(f"\nFound {len(devices)} device(s): {', '.join(devices) or 'none'}")
+    print("Start BOTH BlueStacks instances and enable 'Android Debug Bridge (ADB)' in each one's settings.")
+    choice = input("Press Enter to look again, or type two serials separated by a space: ").strip().split()
+    return choice if len(choice) == 2 else None
+
+
+def ensure_token() -> None:
+    data = load()
+    if not data["token"]:
+        data["token"] = secrets.token_urlsafe(12)
+        save(data)
+
+
+def ensure_adb(confirm_download=_console_download_adb) -> str:
     adb = find_adb()
     if adb:
         return adb
-    print("adb (Android platform-tools) was not found on this computer.")
-    if input("Download it from Google now? [Y/n] ").strip().lower() in ("", "y", "yes"):
+    if confirm_download():
         return download_adb()
     raise SystemExit("adb is required. Install Android platform-tools and run again.")
 
@@ -133,7 +159,7 @@ def lan_ip() -> str:
         return "<this computer's IP>"
 
 
-def _choose_devices(adb: str, settings: dict) -> None:
+def _choose_devices(adb: str, settings: dict, pick_devices) -> None:
     while True:
         devices = list_devices(adb)
         if len(devices) < 2:
@@ -147,21 +173,18 @@ def _choose_devices(adb: str, settings: dict) -> None:
         if len(devices) == 2:
             settings["device_a"], settings["device_b"] = sorted(devices)
             return
-        print(f"\nFound {len(devices)} device(s): {', '.join(devices) or 'none'}")
-        print("Start BOTH BlueStacks instances and enable 'Android Debug Bridge (ADB)' in each one's settings.")
-        choice = input("Press Enter to look again, or type two serials separated by a space: ").strip().split()
-        if len(choice) == 2:
+        choice = pick_devices(devices)
+        if choice:
             settings["device_a"], settings["device_b"] = choice
             return
 
 
-def ensure_setup() -> dict:
+def ensure_setup(confirm_download=_console_download_adb, pick_devices=_console_pick_devices) -> dict:
     """Creates settings.json on first run (finds adb and the two devices, makes a token). Returns the settings."""
     settings = load()
-    adb = ensure_adb()
+    adb = ensure_adb(confirm_download)
     if not settings["device_a"] or not settings["device_b"]:
-        print("First-time setup")
-        _choose_devices(adb, settings)
+        _choose_devices(adb, settings, pick_devices)
     if not settings["token"]:
         settings["token"] = secrets.token_urlsafe(12)
     save(settings)
