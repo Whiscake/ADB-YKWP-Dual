@@ -60,7 +60,7 @@ class WelcomePage(ui.Page):
 
 class PanelPage(ui.Page):
     title = "ADB-YKWP-Dual"
-    help = "Press Start to begin."
+    help = "Check the config each room plays in the menu next to it, then press Start."
 
     def __init__(self, app) -> None:
         super().__init__(app)
@@ -83,7 +83,7 @@ class PanelPage(ui.Page):
         bridge.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
         bridge.row("Address", "127.0.0.1", copy=True)
         self.port = bridge.row("Port", copy=True)
-        self.token = bridge.row("Token", copy=True)
+        self.token = bridge.row("Token", copy=True, secret=True)
         self.boxes: dict[str, ttk.Combobox] = {}
         self.names: dict[str, list[str]] = {}
         self.rooms = tk.Frame(bridge.body, bg=ui.CARD)

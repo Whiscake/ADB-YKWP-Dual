@@ -85,18 +85,54 @@ class Card(tk.Frame):
         self.body = tk.Frame(self, bg=CARD)
         self.body.pack(fill="both", expand=True, padx=12, pady=(0, 10))
 
-    def row(self, label: str, value: str = "", copy: bool = False, right=None) -> tk.StringVar:
-        return row(self.body, label, value, copy, right=right)
+    def row(self, label: str, value: str = "", copy: bool = False, right=None, secret: bool = False) -> tk.StringVar:
+        return row(self.body, label, value, copy, right=right, secret=secret)
+
+
+def eye(parent: tk.Misc, on_toggle) -> tk.Canvas:
+    canvas = tk.Canvas(parent, width=24, height=18, bg=CARD, highlightthickness=0, cursor="hand2")
+    shown = [False]
+
+    def draw() -> None:
+        canvas.delete("all")
+        canvas.create_oval(2, 4, 22, 14, outline=GREEN_DARK, width=2)
+        canvas.create_oval(9, 6, 15, 12, fill=GREEN_DARK, outline="")
+        if not shown[0]:
+            canvas.create_line(4, 16, 20, 2, fill=GREEN_DARK, width=2)
+
+    def toggle(_=None) -> None:
+        shown[0] = not shown[0]
+        draw()
+        on_toggle(shown[0])
+
+    canvas.bind("<Button-1>", toggle)
+    draw()
+    Tooltip(canvas, "Show or hide")
+    return canvas
 
 
 def row(parent: tk.Misc, label: str, value: str = "", copy: bool = False, bold: bool = False,
-        right=None) -> tk.StringVar:
+        right=None, secret: bool = False) -> tk.StringVar:
     """A label and a value that wraps to the width it gets, optionally with a Copy button or `right(frame)`."""
     frame = tk.Frame(parent, bg=CARD)
     frame.pack(fill="x", pady=1)
     tk.Label(frame, text=label, bg=CARD, fg=TEXT if bold else MUTED, width=12, anchor="nw",
              font=(FONT, 9, "bold" if bold else "normal")).pack(side="left", anchor="n")
     var = tk.StringVar(value=value)
+    shown_var = var
+    if secret:
+        shown_var = tk.StringVar()
+        visible = [False]
+
+        def refresh(*_) -> None:
+            shown_var.set(var.get() if visible[0] else "•" * min(len(var.get()), 16))
+
+        def toggle(state: bool) -> None:
+            visible[0] = state
+            refresh()
+
+        var.trace_add("write", refresh)
+        refresh()
     if copy:
         def to_clipboard() -> None:
             frame.clipboard_clear()
@@ -105,7 +141,9 @@ def row(parent: tk.Misc, label: str, value: str = "", copy: bool = False, bold: 
         ttk.Button(frame, text="Copy", width=5, command=to_clipboard).pack(side="right")
     if right:
         right(frame).pack(side="right")
-    shown = tk.Label(frame, textvariable=var, bg=CARD, fg=TEXT, anchor="w", justify="left", font=(FONT, 9))
+    if secret:
+        eye(frame, toggle).pack(side="right", padx=(0, 6))
+    shown = tk.Label(frame, textvariable=shown_var, bg=CARD, fg=TEXT, anchor="w", justify="left", font=(FONT, 9))
     shown.pack(side="left", fill="x", expand=True)
     shown.bind("<Configure>", lambda e: shown.configure(wraplength=max(80, e.width - 4)))
     return var

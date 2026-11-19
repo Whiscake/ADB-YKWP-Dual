@@ -19,7 +19,9 @@ class ConfigPage(ui.Page):
     help = ("1  Choose where your clicker config is: in one of the emulators, or a backup file on this PC.\n"
             "2  Choose the config, then the event that presses OK after a stage clear and the one that sees "
             "the login screen.\n"
-            "3  Press Send: both emulators get a ready copy called '(dual ...)', and Start plays it by itself.")
+            "3  Press Send: both emulators get a ready copy called '(dual ...)'.\n"
+            "4  On the panel, the menu next to each room is the config that room plays at Start: Send picks the new "
+            "copy for you, and you can change it there any time.")
 
     def __init__(self, app) -> None:
         super().__init__(app)
