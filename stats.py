@@ -21,22 +21,19 @@ CLEAR_MARKER = "stage clear detected on"
 STUCK_MARKER = "has not cleared a stage in"
 RECOVERED_MARKER = "recovered after being stuck for"
 STARTING_MARKER = "starting: active="
+RESTARTED_MARKER = " restarted and resumed"
 RULE = "-" * 66
 
 
 def _log_files() -> list:
-    backups = sorted(
-        LOG_DIR.glob(f"{LOG_BASENAME}.*"),
-        key=lambda p: int(p.suffix.lstrip(".")),
-        reverse=True,
-    )
+    backups = sorted(LOG_DIR.glob(f"{LOG_BASENAME}.*"), key=lambda p: p.stat().st_mtime)
     base = LOG_DIR / LOG_BASENAME
     return backups + ([base] if base.exists() else [])
 
 
 def _iter_lines():
     for path in _log_files():
-        with open(path, "r", errors="ignore") as f:
+        with open(path, "r", encoding="utf-8", errors="ignore") as f:
             for line in f:
                 match = LINE_RE.match(line)
                 if match:
@@ -62,8 +59,15 @@ def compute_stats() -> dict:
     stuck_open_since = None
     downtime = timedelta()
     session_clears = 0
+    restarts: dict[str, int] = {}
 
     for ts, msg in _iter_lines():
+        if msg.endswith(RESTARTED_MARKER):
+            if ts > window_start:
+                serial = msg[:-len(RESTARTED_MARKER)]
+                restarts[serial] = restarts.get(serial, 0) + 1
+            continue
+
         if STARTING_MARKER in msg:
             stuck_open_since = None
             prev_clear_ts = None
@@ -117,6 +121,7 @@ def compute_stats() -> dict:
         "points_per_day": points_per_hour * 24 if points_per_hour else None,
         "points_to_target": points_to_target,
         "target": target,
+        "restarts": restarts,
     }
 
 
@@ -151,11 +156,10 @@ class RecentWarnings(logging.Handler):
 
 def render(coordinator, recent: RecentWarnings) -> list:
     stats = compute_stats()
-    lan = settings.lan_ip()
     lines = [
         f"ADB-YKWP-Dual{datetime.now().strftime('%Y-%m-%d %H:%M:%S'):>53}",
         RULE,
-        f"Bridge address : 10.0.2.2 (or {lan})   Port: {config.BRIDGE_PORT}",
+        f"Bridge address : 127.0.0.1 (through adb reverse)   Port: {config.BRIDGE_PORT}",
         f"Bridge token   : {config.BRIDGE_TOKEN}",
         f"Devices        : {config.DEVICE_A}, {config.DEVICE_B}",
         f"Status         : {_status(coordinator)}",

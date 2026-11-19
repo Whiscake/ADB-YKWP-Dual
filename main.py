@@ -5,6 +5,10 @@ import settings
 
 
 def run() -> None:
+    if not {"--console", "--log"} & set(sys.argv):
+        import gui
+        gui.run()
+        return
     first_run = not settings.SETTINGS_FILE.exists()
     cfg = settings.ensure_setup()
     if first_run or "--log" in sys.argv:
