@@ -74,8 +74,10 @@ GROUPS = [
 class SettingsPage(ui.Page):
     title = "Settings"
     help = ("1  Type the points one battle gives you: the stats use it.\n"
-            "2  The other settings work as they are for most people. Hover the ⓘ next to one to see what it does.\n"
-            "3  Press Save.")
+            "2  The emulators restart by themselves every 20 hours, one at a time while the other plays, to clear the "
+            "lag (LDPlayer only). Change it under Emulator restart.\n"
+            "3  The other settings work as they are for most people. Hover the ⓘ next to one to see what it does.\n"
+            "4  Press Save.")
 
     def __init__(self, app) -> None:
         super().__init__(app)

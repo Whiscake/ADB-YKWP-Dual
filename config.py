@@ -1,7 +1,7 @@
 """Application constants. User-editable values are read from settings.json; reload() picks up saved changes."""
 import settings as _settings
 
-BRIDGE_HOST = "0.0.0.0"
+BRIDGE_HOST = "127.0.0.1"
 
 
 def reload() -> None:

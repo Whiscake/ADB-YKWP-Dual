@@ -14,7 +14,7 @@ Two emulator instances, **A** and **B**, take turns playing the game. One is **p
 4. swaps the roles
 
 A fork of Smart AutoClicker on each instance tells the program what is happening by sending **events**. The clicker
-reaches the program at `127.0.0.1` through `adb reverse`, which the program sets up on Start, after a restart and
+reaches the program at `127.0.0.1` through `adb reverse`, and the program only listens on this computer, which the program sets up on Start, after a restart and
 whenever the link drops, so firewalls and emulator network settings do not matter.
 
 ## Events
@@ -113,8 +113,8 @@ file to start over with a new token.
 | `force_stop_after_seconds` | 300 | No clear for this long: the game is closed. 0 turns it off |
 | `both_at_login_window_seconds` | 6 | Two `login-screen` events this close together mean both instances are at login |
 | `login_retry_seconds` | 8 | Minimum gap between login taps caused by `login-screen` events |
-| `restart_enabled` | false | Restart the instances regularly (LDPlayer only) |
-| `restart_every_minutes` | 120 | Time between two restart rounds |
+| `restart_enabled` | true | Restart the instances regularly (LDPlayer only) |
+| `restart_every_minutes` | 1200 | Time between two restart rounds |
 | `restart_boot_timeout_seconds` | 240 | How long a restarting instance may take to come back |
 | `rescue_restart_seconds` | 600 | No clear for this long, even after closing the game: both instances restart. 0 turns it off |
 | `dual_configs` | set by Send | The config each instance plays at Start, by instance. Empty means the one already running |

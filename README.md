@@ -8,9 +8,28 @@ Smart AutoClicker on each instance sees what is happening on screen and tells th
 handoff, watches for a stuck instance, restarts laggy emulators, and can send phone alerts through
 [ntfy.sh](https://ntfy.sh).
 
-Contents: [What you need](#what-you-need) · [Install](#install) · [First start: the tutorial](#first-start-the-tutorial) ·
-[The panel](#the-panel) · [Tray](#tray) · [Settings](#settings) · [Keep your computer awake](#keep-your-computer-awake) ·
-[Troubleshooting](#troubleshooting) · [Safety and performance](#safety-and-performance)
+Contents: [Safety and performance](#safety-and-performance) · [What you need](#what-you-need) · [Install](#install) ·
+[First start: the tutorial](#first-start-the-tutorial) · [The panel](#the-panel) · [Tray](#tray) · [Settings](#settings) · [Keep your computer awake](#keep-your-computer-awake) ·
+[Troubleshooting](#troubleshooting)
+
+## Safety and performance
+
+The program is light: while it runs it uses about 60 MB of memory and almost no processor, and it only talks to your
+emulators through adb on this computer. The clicker sends its events to it through `adb reverse`, so nothing is opened
+to your network or to the internet; the only outside connections are the optional phone alerts (ntfy.sh) and the
+downloads of adb and the clicker, from Google and GitHub.
+
+The program is open source, so you can check it before running it: read the code here or ask an AI assistant to review
+it, scan the downloaded files on [VirusTotal](https://www.virustotal.com), or build it yourself from the code
+(`py build.py`). The Windows program is not code-signed, which is why SmartScreen warns about it. If you have any
+doubt, ask the authors, Whiscake and barone138, directly on Discord: both are known in the YKWPP community.
+
+**Keep the token to yourself.** The token is the password the clickers use to talk to the program: don't post it,
+and hide it before sharing a screenshot of the panel or of the clicker settings (it shows as dots until you click the
+eye). The program only accepts connections from this computer, so the token alone is not enough to reach it from
+outside, but anyone who has it and gets access to your computer or your emulators can make the program tap and close
+the game. If you shared it by mistake, close the program, delete the `token` value in `settings.json` (the **Settings
+file** button opens it) and open the program again: it makes a new one and sends it to the clickers on Start.
 
 ## What you need
 
@@ -71,7 +90,8 @@ The program also links both clickers to this computer through adb, so there is n
 
 ### Step 3: Settings
 
-Type the points one battle gives you (the stats use it). The other settings work as they are for most people; each has
+Type the points one battle gives you (the stats use it). The emulators restart by themselves every 20 hours, one at a
+time while the other keeps playing, to clear the lag (LDPlayer only); change it under *Emulator restart*. The other settings work as they are for most people; each has
 an ⓘ that explains it. See [Settings](#settings).
 
 ## The panel
@@ -108,8 +128,8 @@ Everything is changed from the **⚙** page. Each setting has an ⓘ that says w
 |---|---|---|
 | Points per battle | 22 | Points one stage clear gives you; used for points per hour and the forecast |
 | Forecast until | blank | A date like `2026-12-31 23:59` to forecast your points by |
-| Restart the emulators regularly | off | Restarts each instance in turn while the other plays, then starts its clicker and the game again. LDPlayer only |
-| Every (minutes) | 120 | Time between two restart rounds |
+| Restart the emulators regularly | on | Restarts each instance in turn while the other plays, then starts its clicker and the game again. LDPlayer only |
+| Every (minutes) | 1200 (20 hours) | Time between two restart rounds |
 | Restart both when stuck (s) | 600 | No stage cleared for this long, even after closing the game: both instances restart together. 0 never. LDPlayer only |
 | Stuck after (s) | 40 | No stage clear for this long: shown as stuck. Set it above your slowest stage |
 | Close game after (s) | 300 | Still stuck after this long: the game is closed, both instances go back to login and play resumes. 0 never |
@@ -148,18 +168,6 @@ The program only works while your computer is awake: the screen can turn off, th
   and Android then leaves the clicker's accessibility service on but not running. Restart the instance.
 
 Every situation, including what happens when something goes wrong, is covered in [GUIDE.md](GUIDE.md).
-
-## Safety and performance
-
-The program is light: while it runs it uses about 60 MB of memory and almost no processor, and it only talks to your
-emulators through adb on this computer. The clicker sends its events to it through `adb reverse`, so nothing is opened
-to your network or to the internet; the only outside connections are the optional phone alerts (ntfy.sh) and the
-downloads of adb and the clicker, from Google and GitHub.
-
-The program is open source, so you can check it before running it: read the code here or ask an AI assistant to review
-it, scan the downloaded files on [VirusTotal](https://www.virustotal.com), or build it yourself from the code
-(`py build.py`). The Windows program is not code-signed, which is why SmartScreen warns about it. If you have any
-doubt, ask the authors, Whiscake and barone138, directly on Discord: both are known in the YKWPP community.
 
 ## License
 
