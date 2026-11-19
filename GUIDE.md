@@ -34,6 +34,13 @@ clicker then uses the ones the program sent it.
 
 ## Situations
 
+**Start.** For each instance the program checks that the clicker is installed and its accessibility service is on,
+and that the instance has a config: the one chosen in the menu next to it on the panel, or one already running in
+the clicker. If any of this is missing, nothing starts and the log says what. Otherwise it links both clickers, opens
+the chosen config in each one and presses play (an open config of the same name only gets play pressed), opens the
+game where it is closed, and starts coordinating. The chosen configs are kept in `dual_configs`; **Send** on the ✎ page
+sets them to the new copies.
+
 **Normal clear.** The playing instance sends `stage-clear`. Handoff runs, roles swap.
 
 **Clear sent too early.** A `stage-clear` arriving less than `min_stage_seconds` after that instance started playing
@@ -56,16 +63,23 @@ It does not tap again for `login_retry_seconds`.
 - After `force_stop_after_seconds` (0 turns this off), the game is closed, and again every `force_stop_after_seconds`
   while still stuck. The instance goes back to the login screen, and the `login-screen` events of both instances make
   the program tap login again.
+- After `rescue_restart_seconds` (0 turns this off), both instances restart together, the same way as a periodic
+  restart (LDPlayer only), and a phone alert says so. When they are back, both reach login and play resumes.
 - The next stage clear or login tap logs the recovery and resets everything.
 
 **Periodic restart (LDPlayer only).** With *Restart the emulators regularly* on, every `restart_every_minutes` a
 restart round starts, or right away with **Restart both now**:
 1. The waiting instance restarts while the other keeps playing. Its stage clears are not handed over and the stuck
    checks are paused meanwhile.
-2. The program waits for Android and for the clicker's accessibility service, links the clicker again, has it resume
-   its last config, and opens the game.
+2. The program waits for Android and for the clicker's accessibility service, links the clicker again, has it play the
+   config chosen for that instance (or its last one), and opens the game. LDPlayer's own window arranging (the one of
+   the multi-instance manager) then puts the windows back in place.
 3. At the next handoff the other instance is the waiting one, and it restarts the same way.
 4. The round ends; the next starts `restart_every_minutes` later.
+
+While an instance restarts, the band at the top of the panel turns blue and the status shows the step it is at:
+shutting down, the adb check with the time left before `restart_boot_timeout_seconds` runs out, the clicker, and the
+link.
 
 An instance that is not a running LDPlayer instance is never restarted, and the settings page will not turn the option
 on for it. If a restarting instance is not back within `restart_boot_timeout_seconds`, an alert is sent. If the
@@ -102,12 +116,15 @@ file to start over with a new token.
 | `restart_enabled` | false | Restart the instances regularly (LDPlayer only) |
 | `restart_every_minutes` | 120 | Time between two restart rounds |
 | `restart_boot_timeout_seconds` | 240 | How long a restarting instance may take to come back |
+| `rescue_restart_seconds` | 600 | No clear for this long, even after closing the game: both instances restart. 0 turns it off |
+| `dual_configs` | set by Send | The config each instance plays at Start, by instance. Empty means the one already running |
 | `points_per_clear` | 22 | Points one stage clear gives you |
 | `forecast_target_datetime` | blank | End date like `2026-12-31 23:59` for the points forecast |
 | `stats_interval_seconds` | 5 | How often the stats refresh |
 | `stats_clear_sample_size` | 100 | How many recent clears the clear times are computed from |
 | `stats_uptime_window_hours` | 24 | How far back uptime and restarts are counted |
 | `start_automatically` | true | Start as soon as the program opens |
+| `on_close` | `ask` | What closing the window does: `ask`, `tray` (keep running next to the clock) or `exit` |
 | `write_logs` | true | Write the log files. The stats are computed from them |
 | `tutorial_done` | false | Set once the tutorial is finished or skipped |
 

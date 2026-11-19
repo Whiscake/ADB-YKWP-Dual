@@ -9,7 +9,7 @@ handoff, watches for a stuck instance, restarts laggy emulators, and can send ph
 [ntfy.sh](https://ntfy.sh).
 
 Contents: [What you need](#what-you-need) · [Install](#install) · [First start: the tutorial](#first-start-the-tutorial) ·
-[The panel](#the-panel) · [Settings](#settings) · [Keep your computer awake](#keep-your-computer-awake) ·
+[The panel](#the-panel) · [Tray](#tray) · [Settings](#settings) · [Keep your computer awake](#keep-your-computer-awake) ·
 [Troubleshooting](#troubleshooting)
 
 ## What you need
@@ -20,14 +20,16 @@ Contents: [What you need](#what-you-need) · [Install](#install) · [First start
   - LDPlayer: **Settings → Other settings → ADB debugging → Open local connection**.
   - BlueStacks: **Settings → Advanced → Android Debug Bridge (ADB)**.
 - The Smart AutoClicker build with the ADB action, installed in each instance, with your own config that plays the
-  stages. The program can install it for you.
+  stages. The program can install it for you, or download it yourself: [smartautoclicker.apk](https://github.com/barone138/ykwp-clicker-library/releases/latest/download/smartautoclicker.apk).
+  Its accessibility service must be on in each instance (Android **Settings → Accessibility**).
 
 Nothing else: no Python and no adb install are needed for the release. The program offers to download adb itself.
 
 ## Install
 
-**Windows:** download `dual-login.exe` from the [latest release](https://github.com/Whiscake/ADB-YKWP-Dual/releases/latest)
-and double-click it. It opens a window; nothing else is needed.
+**Windows:** download `dual-login-windows.exe` from the
+[latest release](https://github.com/Whiscake/ADB-YKWP-Dual/releases/latest) and double-click it. It opens a window;
+nothing else is needed.
 
 - **Windows protected your PC (SmartScreen):** the program is not code-signed. Click **More info**, then **Run anyway**.
 
@@ -61,7 +63,9 @@ needs, and installs it.
      last action, so the other instance starts as soon as this one is done.
    - **Login screen event:** the event that sees the game's login (title) screen. Its own clicks are removed: it only
      reports `login-screen` every 2 seconds, and the program taps login when it is that instance's turn.
-3. Press **Send to both emulators**. In each clicker, start the copy called *(your config) (dual (instance))*.
+3. Press **Send to both emulators**. Each clicker gets a copy called *(your config) (dual (instance))*.
+4. Back on the panel, the menu next to each instance shows the config it plays: Send picks the new copy for you. You can
+   change it there any time, or leave **Config already running** to keep the one open in the clicker.
 
 The program also links both clickers to this computer through adb, so there is no address or token to type.
 
@@ -73,13 +77,28 @@ an ⓘ that explains it. See [Settings](#settings).
 ## The panel
 
 - **▶ Start / ■ Stop** starts and stops everything. With *Start when the program opens* on, it starts by itself.
+  Start does the rest on its own: in each instance it opens the chosen config in the clicker and presses play (or just
+  presses play if it is already open), opens the game if it is closed, then coordinates the two. If an instance has
+  no clicker, its accessibility service is off, or it has no config chosen and none running, nothing starts and the
+  log says why.
 - The square buttons open the **⧉ emulators**, the **✎ clicker config**, the **⚙ settings** and the **? tutorial**.
-- **Bridge:** address, port and token (only needed if you set up a clicker by hand), and for each instance: whether it
-  is playing, waiting or restarting, the last message its clicker sent, how long the emulator has been on, and how
-  many times it was restarted in the uptime window.
-- **Stats:** clears this run, clear times, uptime, points per hour and per day, and the forecast. The points per battle
-  can be changed right next to *Points*.
+- **Bridge:** address, port and token (only needed if you set up a clicker by hand; the token shows as dots, click the
+  eye to see it, **Copy** always copies it), and for each instance: whether it is playing, waiting or restarting, the
+  last message its clicker sent, how long the emulator has been on, how many times it was restarted in the uptime
+  window, and the menu with the config it plays. The menu reads the configs saved in that clicker.
+- **Stats:** clears this run, clear times, uptime (time since Start, with the time lost while stuck), points per hour
+  and per day, and the forecast. The points per battle can be changed right next to *Points*.
 - **Log:** what the program is doing. The same lines are saved in the log files.
+- While an instance restarts, the band at the top turns blue and the status shows each step; while the program waits
+  for the instance to answer on adb again, it shows the time left.
+
+## Tray
+
+On Windows the program also has an icon in the notification area, next to the clock. A click on it opens the panel;
+the right click has **Open panel**, **Start / Stop**, **Restart both now** and **Exit**. Hovering it shows the status.
+
+Closing the window asks whether to keep the program running there or close it completely, with **Don't ask again** to
+remember the answer. *Closing the window* in the settings changes it later.
 
 ## Settings
 
@@ -91,10 +110,12 @@ Everything is changed from the **⚙** page. Each setting has an ⓘ that says w
 | Forecast until | blank | A date like `2026-12-31 23:59` to forecast your points by |
 | Restart the emulators regularly | off | Restarts each instance in turn while the other plays, then starts its clicker and the game again. LDPlayer only |
 | Every (minutes) | 120 | Time between two restart rounds |
+| Restart both when stuck (s) | 600 | No stage cleared for this long, even after closing the game: both instances restart together. 0 never. LDPlayer only |
 | Stuck after (s) | 40 | No stage clear for this long: shown as stuck. Set it above your slowest stage |
 | Close game after (s) | 300 | Still stuck after this long: the game is closed, both instances go back to login and play resumes. 0 never |
 | Login button X / Y | 525, 1187 | Where login is tapped, in device pixels. 660, 1484 on a 900x1600 instance |
 | Phone alerts (ntfy URL) | blank | An ntfy.sh topic for alerts on your phone |
+| Closing the window | Ask every time | What the window's X does: ask, minimize to the tray, or close completely |
 | Write log files | on | Not recommended to turn off: the stats are computed from the logs. Logs older than 3 days are deleted |
 
 The values are kept in `settings.json`, in `%APPDATA%\dual-login\` on Windows, `~/Library/Application Support/dual-login/`
@@ -112,8 +133,14 @@ The program only works while your computer is awake: the screen can turn off, th
 ## Troubleshooting
 
 - **No instance found:** ADB is off in the instance, or the instance is closed. Turn ADB on, then press **Refresh**.
+- **Start does nothing and the log says "not started":** the line says why. Usually the clicker's accessibility service
+  is off in that instance (turn it on in Android **Settings → Accessibility**), or no config is chosen next to it and
+  none is running.
+- **Install clicker fails, or the instance says the app is not compatible:** a clicker from another source is
+  installed with a different signature. Export your configs from it, uninstall it, then install again.
 - **Nothing happens on a stage clear:** check the last message of each instance on the panel. *No message yet* means the
-  clicker is not running the dual copy, or it lost the link: press Stop and Start to link it again.
+  clicker is not running the dual copy, or it lost the link: check the config in the menu next to the instance, then
+  press Stop and Start.
 - **The log says "wrong bridge token":** the clicker has another token. Press Stop and Start, which sends it again.
 - **Login is tapped in the wrong place:** change *Login button X / Y* in the settings.
 - **"Stuck" while a stage is still going:** raise *Stuck after* above your slowest stage.

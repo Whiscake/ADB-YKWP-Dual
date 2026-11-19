@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 CLICKER_PACKAGES = ("com.puni.smartautoclicker.debug", "com.puni.smartautoclicker")
-CLICKER_APK_URL = "https://github.com/Whiscake/ADB-YKWP-Dual/releases/latest/download/smartautoclicker-debug.apk"
+CLICKER_APK_URL = "https://github.com/barone138/ykwp-clicker-library/releases/latest/download/smartautoclicker.apk"
 DOWNLOAD_DIR = "/sdcard/Download"
 BACKUP_RECEIVER = "com.buzbuz.smartautoclicker.BackupReceiver"
 EXPORT_FILE = "dual_export.zip"
