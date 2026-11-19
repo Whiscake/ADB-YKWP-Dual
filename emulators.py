@@ -108,14 +108,31 @@ def _ldplayer() -> list[Emulator]:
     return found
 
 
+def _ldplayer_index(serial: str) -> int | None:
+    port = serial.rsplit("-", 1)[-1].rsplit(":", 1)[-1]
+    if not port.isdigit():
+        return None
+    index = (int(port) - 5554) // 2 if serial.startswith("emulator-") else (int(port) - 5555) // 2
+    return index if index >= 0 else None
+
+
+def restartable(serial: str) -> bool:
+    """True when `serial` is a running LDPlayer instance, the only kind this program can restart."""
+    console, index = _ldplayer_console(), _ldplayer_index(serial)
+    if not console or index is None:
+        return False
+    for line in _run([str(console), "list2"]).stdout.splitlines():
+        parts = line.split(",")
+        if len(parts) >= 5 and parts[0] == str(index):
+            return parts[4] == "1"
+    return False
+
+
 def reboot(serial: str) -> bool:
     """Restarts an LDPlayer instance through ldconsole. Other emulators are not supported."""
-    console = _ldplayer_console()
-    port = int(serial.rsplit("-", 1)[-1].rsplit(":", 1)[-1])
-    index = (port - 5554) // 2 if serial.startswith("emulator-") else (port - 5555) // 2
-    if not console or index < 0:
+    if not restartable(serial):
         return False
-    return _run([str(console), "reboot", "--index", str(index)]).returncode == 0
+    return _run([str(_ldplayer_console()), "reboot", "--index", str(_ldplayer_index(serial))]).returncode == 0
 
 
 def discover(adb: str) -> list[Emulator]:

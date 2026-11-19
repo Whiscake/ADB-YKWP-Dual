@@ -3,14 +3,23 @@ import tkinter as tk
 from tkinter import ttk
 
 import config
+import emulators
 import settings
 import ui
 
 GROUPS = [
+    ("Your points", [
+        ("points_per_clear", "Points per battle",
+         "The points one battle (one stage clear) gives you. The game doesn't tell this program, so type it here: "
+         "the points per hour and the forecast use it. You can also change it next to Points on the panel."),
+        ("forecast_target_datetime", "Forecast until",
+         "Date for the points forecast, like 2026-12-31 23:59. Empty hides the forecast."),
+    ]),
     ("Emulator restart", [
         ("restart_enabled", "Restart the emulators regularly",
          "Emulators slow down after hours of play. When this is on, each emulator is restarted in turn while the "
-         "other keeps playing, then its clicker and the game are started again."),
+         "other keeps playing, then its clicker and the game are started again. Works only with LDPlayer: other "
+         "emulators are never restarted."),
         ("restart_every_minutes", "Every (minutes)", "How long between two restart rounds."),
         ("restart_boot_timeout_seconds", "Wait for restart (s)",
          "How long a restarting emulator may take to come back before you get an alert."),
@@ -38,9 +47,6 @@ GROUPS = [
         ("tap_jitter_pixels", "Tap spread (pixels)", "Each tap lands a few random pixels away, like a finger."),
     ]),
     ("Stats and alerts", [
-        ("points_per_clear", "Points per clear", "Used for the points per hour and the forecast."),
-        ("forecast_target_datetime", "Forecast until",
-         "Date for the points forecast, like 2026-12-31 23:59. Empty hides the forecast."),
         ("stats_uptime_window_hours", "Uptime window (h)", "The uptime and restart counts cover this many hours."),
         ("ntfy_url", "Phone alerts (ntfy URL)",
          "An ntfy.sh topic URL, like https://ntfy.sh/your-topic. Install the ntfy app and subscribe to the same "
@@ -60,8 +66,9 @@ GROUPS = [
 
 class SettingsPage(ui.Page):
     title = "Settings"
-    help = ("Extra settings. The defaults work for most people.\n"
-            "Hover the ⓘ next to a setting to see what it does, then press Save.")
+    help = ("1  Type the points one battle gives you: the stats use it.\n"
+            "2  The other settings work as they are for most people. Hover the ⓘ next to one to see what it does.\n"
+            "3  Press Save.")
 
     def __init__(self, app) -> None:
         super().__init__(app)
@@ -133,8 +140,16 @@ class SettingsPage(ui.Page):
                 self.status.set(f"{self.labels[key]}: can't be negative.")
                 return False
             data[key] = value
+        refused = data["restart_enabled"] and not settings.load()["restart_enabled"] and not all(
+            emulators.restartable(s) for s in (data["device_a"], data["device_b"]) if s)
+        if refused:
+            data["restart_enabled"] = False
+            self.vars["restart_enabled"].set(False)
         settings.save(data)
         config.reload()
         self.app.settings_saved()
+        if refused:
+            self.status.set("Saved, but restart stays off: it works only with open LDPlayer instances.")
+            return True
         self.status.set("Saved.")
         return True

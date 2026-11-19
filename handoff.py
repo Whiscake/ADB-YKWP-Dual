@@ -188,9 +188,13 @@ class Coordinator:
             due = minutes and time.time() - self.cycle_started_at >= minutes * 60
             if not self.restart_pending and (due or self.restart_requested):
                 self.restart_requested = False
-                self.restart_pending = set(DEVICES)
                 self.cycle_started_at = time.time()
-                log.info("restart cycle started: each emulator restarts while the other plays")
+                self.restart_pending = {serial for serial in DEVICES if emulators.restartable(serial)}
+                skipped = set(DEVICES) - self.restart_pending
+                if skipped:
+                    log.warning("not restarting %s: only LDPlayer instances can be restarted", ", ".join(skipped))
+                if self.restart_pending:
+                    log.info("restart cycle started: each emulator restarts while the other plays")
             idle = self.idle
             if idle is None or self.restarting or idle not in self.restart_pending:
                 return None
