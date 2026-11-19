@@ -10,7 +10,7 @@ handoff, watches for a stuck instance, restarts laggy emulators, and can send ph
 
 Contents: [What you need](#what-you-need) · [Install](#install) · [First start: the tutorial](#first-start-the-tutorial) ·
 [The panel](#the-panel) · [Tray](#tray) · [Settings](#settings) · [Keep your computer awake](#keep-your-computer-awake) ·
-[Troubleshooting](#troubleshooting)
+[Troubleshooting](#troubleshooting) · [Safety and performance](#safety-and-performance)
 
 ## What you need
 
@@ -148,6 +148,18 @@ The program only works while your computer is awake: the screen can turn off, th
   and Android then leaves the clicker's accessibility service on but not running. Restart the instance.
 
 Every situation, including what happens when something goes wrong, is covered in [GUIDE.md](GUIDE.md).
+
+## Safety and performance
+
+The program is light: while it runs it uses about 60 MB of memory and almost no processor, and it only talks to your
+emulators through adb on this computer. The clicker sends its events to it through `adb reverse`, so nothing is opened
+to your network or to the internet; the only outside connections are the optional phone alerts (ntfy.sh) and the
+downloads of adb and the clicker, from Google and GitHub.
+
+The program is open source, so you can check it before running it: read the code here or ask an AI assistant to review
+it, scan the downloaded files on [VirusTotal](https://www.virustotal.com), or build it yourself from the code
+(`py build.py`). The Windows program is not code-signed, which is why SmartScreen warns about it. If you have any
+doubt, ask the authors, Whiscake and barone138, directly on Discord: both are known in the YKWPP community.
 
 ## License
 
