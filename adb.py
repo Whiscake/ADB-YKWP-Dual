@@ -143,6 +143,10 @@ def resume_clicker(serial: str, package: str, scenario: str | None = None) -> No
                  *extra)
 
 
+def clicker_playing(serial: str, package: str) -> bool:
+    return package in _shell_output(serial, "dumpsys", "media_projection")
+
+
 def game_running(serial: str, package: str) -> bool:
     return bool(_shell_output(serial, "pidof", package))
 

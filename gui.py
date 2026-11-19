@@ -14,6 +14,7 @@ from tkinter import messagebox, ttk
 import adb
 import config
 import devices
+import emulators
 import handoff
 import options
 import prepare
@@ -23,7 +24,9 @@ import ui
 
 LOG_LINES = 300
 STATUS_COLORS = {"OK": ui.GREEN_DARK, "STUCK": ui.RED, "Restarting": "#00668A"}
-ICON = Path(getattr(sys, "_MEIPASS", Path(__file__).parent)) / "images" / "panel.ico"
+IMAGES = Path(getattr(sys, "_MEIPASS", Path(__file__).parent)) / "images"
+ICON = IMAGES / "panel.ico"
+RUNNING = "Config already running"
 
 
 class QueueHandler(logging.Handler):
@@ -81,7 +84,8 @@ class PanelPage(ui.Page):
         bridge.row("Address", "127.0.0.1", copy=True)
         self.port = bridge.row("Port", copy=True)
         self.token = bridge.row("Token", copy=True)
-        self.config_name = bridge.row("Config")
+        self.boxes: dict[str, ttk.Combobox] = {}
+        self.names: dict[str, list[str]] = {}
         self.rooms = tk.Frame(bridge.body, bg=ui.CARD)
         self.rooms.pack(fill="x", pady=(6, 0))
         self.room_rows: dict[str, tk.StringVar] = {}
@@ -136,17 +140,51 @@ class PanelPage(ui.Page):
         self.per_clear.set(str(config.POINTS_PER_CLEAR))
         self.port.set(str(config.BRIDGE_PORT))
         self.token.set(config.BRIDGE_TOKEN)
-        names = [config.DUAL_CONFIGS.get(s) for s in (config.DEVICE_A, config.DEVICE_B) if s]
-        self.config_name.set(", ".join(sorted(set(names))) if names and all(names) else
-                             "none yet: press ✎ and Send")
         for child in self.rooms.winfo_children():
             child.destroy()
-        self.room_rows = {serial: ui.row(self.rooms, config.DEVICE_NAMES[serial], bold=True)
+        self.boxes.clear()
+        self.room_rows = {serial: ui.row(self.rooms, config.DEVICE_NAMES[serial], bold=True,
+                                         right=lambda frame, s=serial: self._config_box(frame, s))
                           for serial in (config.DEVICE_A, config.DEVICE_B) if serial}
         if not self.room_rows:
             tk.Label(self.rooms, text="No emulators picked yet: press ⧉ on the right.", bg=ui.CARD,
                      fg=ui.MUTED, font=(ui.FONT, 9)).pack(anchor="w")
         self.tick()
+
+    def _config_box(self, parent: tk.Misc, serial: str) -> ttk.Combobox:
+        box = ttk.Combobox(parent, state="readonly", width=26, postcommand=lambda: self._load_names(serial))
+        box.set(config.DUAL_CONFIGS.get(serial) or RUNNING)
+        box.configure(values=[RUNNING] + self.names.get(serial, []))
+        box.bind("<<ComboboxSelected>>", lambda _: self._choose(serial, box.get()))
+        ui.Tooltip(box, "The clicker config this room plays when you press Start. 'Config already running' keeps "
+                        "the one open in the clicker.")
+        self.boxes[serial] = box
+        return box
+
+    def _load_names(self, serial: str) -> None:
+        if serial in self.names:
+            return
+        self.names[serial] = []
+        self.boxes[serial].configure(values=[RUNNING, "loading..."])
+
+        def done(result) -> None:
+            names = result if isinstance(result, list) else []
+            self.names[serial] = names
+            if not names:
+                self.names.pop(serial)
+            if serial in self.boxes:
+                self.boxes[serial].configure(values=[RUNNING] + names)
+
+        self.app.run_job(lambda: emulators.scenario_names(self.app.adb, serial, settings.DATA_DIR), done)
+
+    def _choose(self, serial: str, name: str) -> None:
+        if name == "loading...":
+            self.boxes[serial].set(config.DUAL_CONFIGS.get(serial) or RUNNING)
+            return
+        data = settings.load()
+        data["dual_configs"] = {**data["dual_configs"], serial: "" if name == RUNNING else name}
+        settings.save(data)
+        config.reload()
 
     def tick(self) -> None:
         coordinator = self.app.coordinator
@@ -231,8 +269,10 @@ class App:
         root.configure(bg=ui.BACKGROUND)
         ui.style(root)
 
-        if sys.platform == "win32" and ICON.exists():
-            root.iconbitmap(default=str(ICON))
+        if ICON.exists():
+            self.icons = [tk.PhotoImage(file=str(IMAGES / name)) for name in
+                          ("panel.png", "panel-48.png", "panel-32.png")]
+            root.iconphoto(True, *self.icons)
         root.protocol("WM_DELETE_WINDOW", self.close)
 
         band = tk.Frame(root, bg=ui.GREEN)
@@ -419,18 +459,15 @@ class App:
             self.show(self.emulators_page)
             self.emulators_page.status.set("Tick the two instances to use, then press 'Use these two instances'.")
             return
-        if not all(config.DUAL_CONFIGS.get(s) for s in (config.DEVICE_A, config.DEVICE_B)):
-            self.show_window()
-            self.show(self.config_page)
-            self.config_page.status.set("Choose the clicker config to play, then press Send. Start needs it.")
-            messagebox.showwarning("ADB-YKWP-Dual", "No clicker config chosen yet.\n\nChoose the config to play "
-                                                    "on this page and press Send, then press Start again.")
-            return
         if self.starting or self.coordinator:
             return
         self.starting = True
 
         def job():
+            devices = (config.DEVICE_A, config.DEVICE_B)
+            problems = [problem for problem in map(handoff.check_device, devices) if problem]
+            if problems:
+                return RuntimeError("; ".join(problems))
             for attempt in range(10):
                 try:
                     coordinator = handoff.start()
@@ -449,6 +486,9 @@ class App:
 
         def done(result) -> None:
             self.starting = False
+            if isinstance(result, RuntimeError):
+                logging.getLogger("coordinator").error("not started: %s", result)
+                return
             if isinstance(result, BaseException):
                 messagebox.showerror("ADB-YKWP-Dual", f"Could not start: {result}")
                 return

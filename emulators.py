@@ -206,6 +206,15 @@ def export_scenarios(adb: str, serial: str, local: Path) -> bool:
     return pull(adb, serial, f"/sdcard/Android/data/{package}/files/{EXPORT_FILE}", local)
 
 
+def scenario_names(adb: str, serial: str, folder: Path) -> list[str]:
+    import configs
+    local = folder / f"names-{serial.replace(':', '_')}.zip"
+    try:
+        return [scenario.name for scenario in configs.read(local)] if export_scenarios(adb, serial, local) else []
+    finally:
+        local.unlink(missing_ok=True)
+
+
 def import_scenarios(adb: str, serial: str, local: Path) -> int | None:
     """Copies a backup into the clicker's folder and has the clicker import it. Returns how many scenarios came in."""
     package = clicker_package(adb, serial)

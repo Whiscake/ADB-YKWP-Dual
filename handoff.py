@@ -310,19 +310,29 @@ class Coordinator:
                 notify.send(f"🚨 dual-login: could not force-stop {to_stop}: {exc}", priority="urgent")
 
 
-def prepare_device(serial: str) -> None:
-    """Opens the dual config in the clicker and plays it, then opens the game if it is closed."""
+def check_device(serial: str) -> str | None:
+    """Why `serial` can't play, or None when its clicker has a config to play."""
     try:
+        adb.ensure_connected(serial)
         package = adb.installed_clicker(serial)
         if not package:
-            log.error("the clicker is not installed on %s", serial)
-            return
+            return f"the clicker is not installed on {serial}"
         if not adb.clicker_service_ready(serial, package):
-            log.error("the clicker accessibility service on %s is off: turn it on in the Android settings", serial)
-            return
+            return f"the clicker accessibility service on {serial} is off: turn it on in the Android settings"
+        if not config.DUAL_CONFIGS.get(serial) and not adb.clicker_playing(serial, package):
+            return f"no config is running on {serial}: pick one next to {serial} on the panel, or start it in the clicker"
+    except Exception as exc:
+        return f"could not check {serial}: {exc}"
+    return None
+
+
+def prepare_device(serial: str) -> None:
+    """Plays the chosen config, or the one already open, then opens the game if it is closed."""
+    try:
+        package = adb.installed_clicker(serial)
         scenario = config.DUAL_CONFIGS.get(serial)
         adb.resume_clicker(serial, package, scenario)
-        log.info("%s plays %s", serial, scenario)
+        log.info("%s plays %s", serial, scenario or "its running config")
         if not adb.game_running(serial, config.GAME_PACKAGE):
             time.sleep(3)
             adb.start_game(serial, config.GAME_PACKAGE)
