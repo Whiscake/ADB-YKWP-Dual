@@ -5,10 +5,11 @@ import subprocess
 import sys
 
 name = "dual-login"
-icon = ["--icon", "images/panel.ico"] if platform.system() == "Windows" else []
+windows = platform.system() == "Windows"
+mode = ["--windowed", "--icon", "images/panel.ico"] if windows else ["--console"]
 subprocess.run(
-    [sys.executable, "-m", "PyInstaller", "--onefile", "--windowed", "--name", name, "--clean", *icon,
+    [sys.executable, "-m", "PyInstaller", "--onefile", *mode, "--name", name, "--clean",
      "--add-data", f"images/panel*{os.pathsep}images", "main.py"],
     check=True,
 )
-print(f"\nBuilt dist/{name}{'.exe' if platform.system() == 'Windows' else ''}")
+print(f"\nBuilt dist/{name}{'.exe' if windows else ''}")
