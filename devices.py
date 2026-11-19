@@ -9,7 +9,7 @@ import ui
 
 STATE_COLORS = {"ready": "#2E7D32", "not attached": ui.ORANGE, "ADB disabled": "#C62828", "off": "#9E9E9E"}
 STATE_TEXT = {"ready": "ready", "not attached": "not connected", "ADB disabled": "ADB is off", "off": "closed"}
-APK_FILE = settings.DATA_DIR / "smartautoclicker-debug.apk"
+APK_FILE = settings.DATA_DIR / "smartautoclicker.apk"
 TICKED, UNTICKED = "☑", "☐"
 
 
@@ -162,8 +162,9 @@ class EmulatorsPage(ui.Page):
         adb = self.app.adb
 
         def job():
-            if not APK_FILE.exists():
-                urllib.request.urlretrieve(emulators.CLICKER_APK_URL, APK_FILE)
+            partial = APK_FILE.with_suffix(".part")
+            urllib.request.urlretrieve(emulators.CLICKER_APK_URL, partial)
+            partial.replace(APK_FILE)
             return [(e.name, emulators.install_apk(adb, e.serial, APK_FILE)) for e in targets]
 
         def done(results) -> None:
