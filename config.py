@@ -32,6 +32,8 @@ def reload() -> None:
         STATS_UPTIME_WINDOW_HOURS=s["stats_uptime_window_hours"],
         RESTART_EVERY_MINUTES=s["restart_every_minutes"] if s["restart_enabled"] else 0,
         RESTART_BOOT_TIMEOUT_SECONDS=s["restart_boot_timeout_seconds"],
+        RESCUE_RESTART_SECONDS=s["rescue_restart_seconds"],
+        DUAL_CONFIGS=s["dual_configs"],
         WRITE_LOGS=s["write_logs"],
     )
 

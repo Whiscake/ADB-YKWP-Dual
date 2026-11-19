@@ -7,6 +7,7 @@ import emulators
 import settings
 import ui
 
+CHOICES = {"on_close": [("ask", "Ask every time"), ("tray", "Minimize to tray"), ("exit", "Close completely")]}
 GROUPS = [
     ("Your points", [
         ("points_per_clear", "Points per battle",
@@ -23,6 +24,9 @@ GROUPS = [
         ("restart_every_minutes", "Every (minutes)", "How long between two restart rounds."),
         ("restart_boot_timeout_seconds", "Wait for restart (s)",
          "How long a restarting emulator may take to come back before you get an alert."),
+        ("rescue_restart_seconds", "Restart both when stuck (s)",
+         "When no stage is cleared for this long, even after the game was closed, both emulators restart "
+         "together. 0 never does. Works only with LDPlayer."),
     ]),
     ("Timing", [
         ("min_stage_seconds", "Shortest stage (s)",
@@ -55,6 +59,9 @@ GROUPS = [
     ("Program", [
         ("start_automatically", "Start when the program opens",
          "Start the dual play right away when you open the program."),
+        ("on_close", "Closing the window",
+         "What the X of the window does: ask every time, keep the program running next to the clock "
+         "(notification area), or close it completely."),
         ("write_logs", "Write log files",
          "Not recommended to turn off: the stats are computed from the log files, so they stay empty without "
          "them. Logs older than 3 days are deleted on their own."),
@@ -83,7 +90,10 @@ class SettingsPage(ui.Page):
         ttk.Button(actions, text="Settings file", command=lambda: app.open_path(settings.SETTINGS_FILE)).pack(
             side="left", padx=6)
         self.status = tk.StringVar()
-        tk.Label(actions, textvariable=self.status, bg=ui.BACKGROUND, fg=ui.MUTED).pack(side="left", padx=6)
+        self.status_label = tk.Label(actions, textvariable=self.status, bg=ui.BACKGROUND, fg=ui.MUTED,
+                                     font=(ui.FONT, 10, "bold"))
+        self.status_label.pack(side="left", padx=6)
+        self.status_job = None
 
         scroll = ui.ScrollFrame(self)
         scroll.pack(fill="both", expand=True)
@@ -94,12 +104,19 @@ class SettingsPage(ui.Page):
             for row, (key, label, tip) in enumerate(rows):
                 self._field(card.body, row, key, label, tip)
             if title == "Emulator restart":
-                ttk.Button(card.body, text="Restart both now", command=app.restart_now).grid(
-                    row=0, column=4, padx=(12, 0))
+                self.restart = ttk.Button(card.body, text="Restart both now", command=self._restart_now)
+                self.restart.grid(row=0, column=4, padx=(12, 0))
 
     def _field(self, parent, row: int, key: str, label: str, tip: str) -> None:
         default = settings.DEFAULTS[key]
-        if isinstance(default, bool):
+        if key in CHOICES:
+            var = tk.StringVar()
+            tk.Label(parent, text=label, bg=ui.CARD, fg=ui.TEXT, font=(ui.FONT, 9)).grid(row=row, column=0,
+                                                                                        sticky="w", pady=3)
+            ttk.Combobox(parent, textvariable=var, state="readonly", width=20,
+                         values=[text for _, text in CHOICES[key]]).grid(row=row, column=1, sticky="w", padx=8,
+                                                                         pady=3)
+        elif isinstance(default, bool):
             var = tk.BooleanVar()
             ttk.Checkbutton(parent, text=label, variable=var).grid(row=row, column=0, columnspan=2, sticky="w",
                                                                     pady=3)
@@ -116,8 +133,9 @@ class SettingsPage(ui.Page):
     def shown(self) -> None:
         data = settings.load()
         for key, var in self.vars.items():
-            var.set(data[key])
-        self.status.set("")
+            var.set(dict(CHOICES[key]).get(data[key], data[key]) if key in CHOICES else data[key])
+        self._say("")
+        self._restart_state()
 
     def commit(self) -> bool:
         data = settings.load()
@@ -125,7 +143,9 @@ class SettingsPage(ui.Page):
             default = settings.DEFAULTS[key]
             try:
                 value = var.get()
-                if isinstance(default, bool):
+                if key in CHOICES:
+                    value = next((code for code, text in CHOICES[key] if text == value), default)
+                elif isinstance(default, bool):
                     value = bool(value)
                 elif isinstance(default, int):
                     value = int(float(value))
@@ -134,10 +154,10 @@ class SettingsPage(ui.Page):
                 else:
                     value = str(value).strip()
             except (ValueError, tk.TclError):
-                self.status.set(f"{self.labels[key]}: not a valid number.")
+                self._say(f"✗  {self.labels[key]}: not a valid number.", ui.RED)
                 return False
             if not isinstance(default, (bool, str)) and value < 0:
-                self.status.set(f"{self.labels[key]}: can't be negative.")
+                self._say(f"✗  {self.labels[key]}: can't be negative.", ui.RED)
                 return False
             data[key] = value
         refused = data["restart_enabled"] and not settings.load()["restart_enabled"] and not all(
@@ -149,7 +169,28 @@ class SettingsPage(ui.Page):
         config.reload()
         self.app.settings_saved()
         if refused:
-            self.status.set("Saved, but restart stays off: it works only with open LDPlayer instances.")
+            self._say("✓  Saved, but restart stays off: it works only with open LDPlayer instances.", ui.ORANGE)
             return True
-        self.status.set("Saved.")
+        self._say("✓  Saved", ui.GREEN_DARK)
         return True
+
+    def _say(self, text: str, color: str = ui.MUTED) -> None:
+        self.status.set(text)
+        self.status_label.configure(fg=color)
+        if self.status_job:
+            self.after_cancel(self.status_job)
+            self.status_job = None
+        if text and color != ui.RED:
+            self.status_job = self.after(4000, lambda: self._say(""))
+
+    def _restart_now(self) -> None:
+        if self.app.restart_now():
+            self._restart_state()
+
+    def _restart_state(self) -> None:
+        coordinator = self.app.coordinator
+        busy = coordinator is not None and (coordinator.restart_requested or bool(coordinator.restart_pending))
+        self.restart.configure(text="⟳  Restarting..." if busy else "Restart both now")
+        self.restart.state(["disabled"] if busy else ["!disabled"])
+        if busy and self.winfo_ismapped():
+            self.after(1000, self._restart_state)

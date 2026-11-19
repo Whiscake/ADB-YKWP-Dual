@@ -7,6 +7,7 @@ from tkinter import filedialog, ttk
 import config
 import configs
 import emulators
+import settings
 import ui
 
 NONE = "(none)"
@@ -18,8 +19,7 @@ class ConfigPage(ui.Page):
     help = ("1  Choose where your clicker config is: in one of the emulators, or a backup file on this PC.\n"
             "2  Choose the config, then the event that presses OK after a stage clear and the one that sees "
             "the login screen.\n"
-            "3  Press Send: both emulators get a ready copy. In each clicker, start the copy called "
-            "'(dual ...)'.")
+            "3  Press Send: both emulators get a ready copy called '(dual ...)', and Start plays it by itself.")
 
     def __init__(self, app) -> None:
         super().__init__(app)
@@ -152,17 +152,25 @@ class ConfigPage(ui.Page):
         devices, adb, source, link = self._devices(), self.app.adb, self.source, self.app.link
 
         def job() -> list[str]:
-            sent = []
+            sent, names = [], {}
             for serial, name in devices:
                 target = Path(self.folder.name) / f"{_safe(scenario.name)} - dual {_safe(name)}.zip"
-                configs.prepare(source, target, scenario, clear, login, serial, f"{scenario.name} (dual {name})")
+                dual = f"{scenario.name} (dual {name})"
+                configs.prepare(source, target, scenario, clear, login, serial, dual)
                 if emulators.import_scenarios(adb, serial, target):
                     link(serial)
                     sent.append(name)
+                    names[serial] = dual
+            if names:
+                data = settings.load()
+                data["dual_configs"] = {**data["dual_configs"], **names}
+                settings.save(data)
+                config.reload()
             return sent
 
         self._work("Preparing and sending...", job, lambda sent: self.status.set(
-            f"Done on {', '.join(sent)}. In each clicker, start '{scenario.name} (dual ...)'." if sent else
+            f"Done on {', '.join(sent)}. Press Start on the panel: it opens the game and plays "
+            f"'{scenario.name} (dual ...)' by itself." if sent else
             "Nothing was sent: check that the clicker is installed on both emulators."))
 
 

@@ -135,6 +135,12 @@ def reboot(serial: str) -> bool:
     return _run([str(_ldplayer_console()), "reboot", "--index", str(_ldplayer_index(serial))]).returncode == 0
 
 
+def sort_windows() -> None:
+    console = _ldplayer_console()
+    if console:
+        _run([str(console), "sortWnd"])
+
+
 def discover(adb: str) -> list[Emulator]:
     have = attached(adb)
     found = _bluestacks() + _ldplayer()

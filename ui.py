@@ -5,6 +5,7 @@ from tkinter import ttk
 GREEN = "#4CAF50"
 GREEN_DARK = "#388E3C"
 GREEN_LIGHT = "#E8F5E9"
+BLUE = "#0099CC"
 RED = "#E53935"
 ORANGE = "#EF6C00"
 GREY = "#757575"

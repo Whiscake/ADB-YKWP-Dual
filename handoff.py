@@ -95,6 +95,8 @@ class Coordinator:
         self.restarting: set[str] = set()
         self.restart_requested = False
         self.restart_pending: set[str] = set()
+        self.restart_wait: dict[str, tuple[str, float]] = {}
+        self.last_rescue_at = 0.0
         self.last_event: dict[str, tuple[str, float]] = {}
         self.cycle_started_at = time.time()
         self.stopped = threading.Event()
@@ -203,29 +205,35 @@ class Coordinator:
 
     def restart(self, serial: str) -> None:
         """Restarts the emulator, waits for it, links the clicker again, resumes its scenario and opens the game."""
-        log.info("restarting %s to clear the lag; %s keeps playing, stuck checks paused", serial, self.active)
+        if self.active in self.restarting:
+            log.info("restarting %s", serial)
+        else:
+            log.info("restarting %s to clear the lag; %s keeps playing, stuck checks paused", serial, self.active)
         try:
             package = adb.installed_clicker(serial)
             if not emulators.reboot(serial):
                 raise RuntimeError("only LDPlayer instances can be restarted")
-            adb.wait_until(lambda: not adb.booted(serial), 60, 2)
-            if not adb.wait_until(lambda: adb.ensure_connected(serial) and adb.booted(serial),
-                                  config.RESTART_BOOT_TIMEOUT_SECONDS):
+            self._wait(serial, "shutting down", lambda: not adb.booted(serial), 60, 2)
+            if not self._wait(serial, "adb check", lambda: adb.ensure_connected(serial) and adb.booted(serial),
+                              config.RESTART_BOOT_TIMEOUT_SECONDS):
                 raise RuntimeError(f"not back after {config.RESTART_BOOT_TIMEOUT_SECONDS:.0f}s")
-            if package and adb.wait_until(lambda: adb.clicker_service_ready(serial, package), 120):
-                if not adb.wait_until(lambda: link_clicker(serial, quiet=True), 120, 5):
+            emulators.sort_windows()
+            if package and self._wait(serial, "clicker", lambda: adb.clicker_service_ready(serial, package), 120):
+                if not self._wait(serial, "linking", lambda: link_clicker(serial, quiet=True), 120, 5):
                     log.error("could not link the clicker on %s to this computer after the restart", serial)
-                adb.resume_clicker(serial, package)
+                adb.resume_clicker(serial, package, config.DUAL_CONFIGS.get(serial))
             else:
                 log.error("the clicker accessibility service on %s did not come back; enable it by hand", serial)
             time.sleep(5)
             adb.start_game(serial, config.GAME_PACKAGE)
+            emulators.sort_windows()
             log.info("%s restarted and resumed", serial)
         except Exception as exc:
             log.error("restart of %s failed: %s", serial, exc)
             notify.send(f"🚨 dual-login: restart of {serial} failed: {exc}", priority="urgent")
         finally:
             with self._lock:
+                self.restart_wait.pop(serial, None)
                 self.restarting.discard(serial)
                 self.restart_pending.discard(serial)
                 self.active_since = time.time()
@@ -233,6 +241,26 @@ class Coordinator:
                 if not self.restart_pending:
                     self.cycle_started_at = time.time()
                     log.info("restart cycle finished")
+
+    def _wait(self, serial: str, phase: str, check, timeout: float, interval: float = 3.0) -> bool:
+        self.restart_wait[serial] = (phase, time.time() + timeout)
+        return adb.wait_until(check, timeout, interval)
+
+    def rescue(self) -> bool:
+        targets = {serial for serial in DEVICES if emulators.restartable(serial)}
+        with self._lock:
+            targets -= self.restarting
+            self.restart_pending |= targets
+            self.restarting |= targets
+        if not targets:
+            return False
+        log.error("no stage cleared in %.0fs even after closing the game, restarting %s",
+                  config.RESCUE_RESTART_SECONDS, ", ".join(sorted(targets)))
+        notify.send(f"🚨 dual-login: nothing cleared in {int(config.RESCUE_RESTART_SECONDS)}s, restarting the "
+                    f"emulators", priority="urgent")
+        for serial in targets:
+            threading.Thread(target=self.restart, args=(serial,), daemon=True).start()
+        return True
 
     def watchdog_step(self) -> None:
         """Warns, alerts and force-stops the game on a device that stopped clearing stages. It never taps blindly."""
@@ -243,7 +271,14 @@ class Coordinator:
         with self._lock:
             if self.active is None or self.restarting:
                 return
-            elapsed = time.time() - self.active_since
+            now = time.time()
+            elapsed = now - self.active_since
+            rescue = config.RESCUE_RESTART_SECONDS and elapsed > config.RESCUE_RESTART_SECONDS and                 now - self.last_rescue_at > config.RESCUE_RESTART_SECONDS
+            if rescue:
+                self.last_rescue_at = now
+        if rescue and self.rescue():
+            return
+        with self._lock:
             if elapsed <= config.STUCK_TIMEOUT_SECONDS:
                 return
             now = time.time()
@@ -273,6 +308,27 @@ class Coordinator:
             except Exception as exc:
                 log.error("force-stop of %s failed: %s", to_stop, exc)
                 notify.send(f"🚨 dual-login: could not force-stop {to_stop}: {exc}", priority="urgent")
+
+
+def prepare_device(serial: str) -> None:
+    """Opens the dual config in the clicker and plays it, then opens the game if it is closed."""
+    try:
+        package = adb.installed_clicker(serial)
+        if not package:
+            log.error("the clicker is not installed on %s", serial)
+            return
+        if not adb.clicker_service_ready(serial, package):
+            log.error("the clicker accessibility service on %s is off: turn it on in the Android settings", serial)
+            return
+        scenario = config.DUAL_CONFIGS.get(serial)
+        adb.resume_clicker(serial, package, scenario)
+        log.info("%s plays %s", serial, scenario)
+        if not adb.game_running(serial, config.GAME_PACKAGE):
+            time.sleep(3)
+            adb.start_game(serial, config.GAME_PACKAGE)
+            log.info("opened the game on %s", serial)
+    except Exception as exc:
+        log.error("could not get %s ready: %s", serial, exc)
 
 
 def link_clicker(serial: str, force: bool = True, quiet: bool = False) -> bool:

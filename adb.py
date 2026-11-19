@@ -1,4 +1,5 @@
 import random
+import shlex
 import subprocess
 import time
 
@@ -134,10 +135,16 @@ def clicker_service_ready(serial: str, package: str) -> bool:
     return "SmartAutoClickerService" in _shell_output(serial, "dumpsys", "activity", "services", package)
 
 
-def resume_clicker(serial: str, package: str) -> None:
-    """Lets the clicker record the screen without the consent dialog, then has it resume its last scenario."""
+def resume_clicker(serial: str, package: str, scenario: str | None = None) -> None:
+    """Lets the clicker record the screen without the consent dialog, then has it play `scenario`, or its last one."""
     _device_call(serial, "shell", "appops", "set", package, "PROJECT_MEDIA", "allow")
-    _device_call(serial, "shell", "am", "start", "-n", f"{package}/com.buzbuz.smartautoclicker.activity.ResumeActivity")
+    extra = ["--es", "scenario_name", shlex.quote(scenario)] if scenario else []
+    _device_call(serial, "shell", "am", "start", "-n", f"{package}/com.buzbuz.smartautoclicker.activity.ResumeActivity",
+                 *extra)
+
+
+def game_running(serial: str, package: str) -> bool:
+    return bool(_shell_output(serial, "pidof", package))
 
 
 def start_game(serial: str, package: str) -> None:

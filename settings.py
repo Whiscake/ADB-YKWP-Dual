@@ -63,6 +63,9 @@ DEFAULTS = {
     "restart_enabled": False,
     "restart_every_minutes": 120,
     "restart_boot_timeout_seconds": 240,
+    "rescue_restart_seconds": 600,
+    "on_close": "ask",
+    "dual_configs": {},
 }
 
 

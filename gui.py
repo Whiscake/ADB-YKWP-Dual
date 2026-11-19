@@ -8,6 +8,7 @@ import threading
 import time
 import tkinter as tk
 from datetime import datetime
+from pathlib import Path
 from tkinter import messagebox, ttk
 
 import adb
@@ -21,7 +22,8 @@ import stats
 import ui
 
 LOG_LINES = 300
-STATUS_COLORS = {"OK": ui.GREEN_DARK, "STUCK": ui.RED}
+STATUS_COLORS = {"OK": ui.GREEN_DARK, "STUCK": ui.RED, "Restarting": "#00668A"}
+ICON = Path(getattr(sys, "_MEIPASS", Path(__file__).parent)) / "images" / "panel.ico"
 
 
 class QueueHandler(logging.Handler):
@@ -79,6 +81,7 @@ class PanelPage(ui.Page):
         bridge.row("Address", "127.0.0.1", copy=True)
         self.port = bridge.row("Port", copy=True)
         self.token = bridge.row("Token", copy=True)
+        self.config_name = bridge.row("Config")
         self.rooms = tk.Frame(bridge.body, bg=ui.CARD)
         self.rooms.pack(fill="x", pady=(6, 0))
         self.room_rows: dict[str, tk.StringVar] = {}
@@ -88,6 +91,7 @@ class PanelPage(ui.Page):
         self.run = numbers.row("This run")
         self.clear = numbers.row("Clear time")
         self.uptime = numbers.row("Uptime")
+        self.downtime = "0s"
         self.points = numbers.row("Points", right=self._points_per_clear)
         self.target = numbers.row("Forecast")
 
@@ -132,6 +136,9 @@ class PanelPage(ui.Page):
         self.per_clear.set(str(config.POINTS_PER_CLEAR))
         self.port.set(str(config.BRIDGE_PORT))
         self.token.set(config.BRIDGE_TOKEN)
+        names = [config.DUAL_CONFIGS.get(s) for s in (config.DEVICE_A, config.DEVICE_B) if s]
+        self.config_name.set(", ".join(sorted(set(names))) if names and all(names) else
+                             "none yet: press ✎ and Send")
         for child in self.rooms.winfo_children():
             child.destroy()
         self.room_rows = {serial: ui.row(self.rooms, config.DEVICE_NAMES[serial], bold=True)
@@ -148,6 +155,9 @@ class PanelPage(ui.Page):
         self.start.configure(text="■  Stop" if running else "▶  Start", bg=ui.RED if running else ui.GREEN_DARK,
                              state="disabled" if busy else "normal")
         now = time.time()
+        started = self.app.started_at
+        self.uptime.set(f"{stats._duration(now - started)} since Start · downtime {self.downtime}" if running and
+                        started else f"stopped · downtime {self.downtime}")
         for serial, var in self.room_rows.items():
             parts = []
             if running:
@@ -187,7 +197,7 @@ class PanelPage(ui.Page):
                      f"{last}")
         self.clear.set(f"avg {s['avg_clear']:.1f}s · fastest {s['fastest_clear']:.1f}s · slowest "
                        f"{s['slowest_clear']:.1f}s" if s["sample_size"] else "no data yet")
-        self.uptime.set(f"{s['uptime_pct']:.1f}% in the last {hours}h · downtime {duration(s['downtime_seconds'])}")
+        self.downtime = duration(s["downtime_seconds"])
         self.points.set(f"~{s['points_per_hour']:.0f}/hour · ~{s['points_per_day']:.0f}/24h"
                         if s["points_per_hour"] is not None else "no data yet")
         self.target.set(f"~{s['points_to_target']:.0f} by {s['target']:%Y-%m-%d %H:%M}"
@@ -206,7 +216,9 @@ class App:
         self.adb = adb_path
         self.link = handoff.link_clicker
         self.coordinator = None
+        self.started_at = 0.0
         self.starting = False
+        self.tray = None
         self.tutorial = False
         self.step = 0
         self.jobs: queue.Queue = queue.Queue()
@@ -219,6 +231,10 @@ class App:
         root.configure(bg=ui.BACKGROUND)
         ui.style(root)
 
+        if sys.platform == "win32" and ICON.exists():
+            root.iconbitmap(default=str(ICON))
+        root.protocol("WM_DELETE_WINDOW", self.close)
+
         band = tk.Frame(root, bg=ui.GREEN)
         band.pack(fill="x")
         text = tk.Frame(band, bg=ui.GREEN)
@@ -229,6 +245,8 @@ class App:
         self.help = tk.Label(text, bg=ui.GREEN, fg="white", font=(ui.FONT, 10), anchor="w", justify="left")
         self.help.pack(fill="x", pady=(2, 0))
         text.bind("<Configure>", lambda e: self.help.configure(wraplength=max(200, e.width - 8)))
+        self.band = (band, text, self.step_label, self.title, self.help)
+        self.band_color = ui.GREEN
         self.status = tk.Label(band, text="", bg=ui.GREY, fg="white", font=(ui.FONT, 9, "bold"), padx=10, pady=3)
         self.back_to_panel = tk.Button(band, text="←  Panel", bg=ui.GREEN_DARK, fg="white", relief="flat",
                                        activebackground=ui.GREEN_DARK, activeforeground="white", cursor="hand2",
@@ -251,6 +269,10 @@ class App:
         self.steps = [self.emulators_page, self.config_page, self.settings_page]
         self.page: ui.Page | None = None
 
+        if sys.platform == "win32" and ICON.exists():
+            import tray
+            self.tray = tray.Tray(str(ICON), "ADB-YKWP-Dual", self.show_window, self._tray_menu,
+                                  lambda callback: self.jobs.put((lambda _: callback(), None)))
         self._poll()
         self._tick()
         self._refresh_stats()
@@ -343,11 +365,25 @@ class App:
     def _tick(self) -> None:
         coordinator = self.coordinator
         text = stats._status(coordinator) if coordinator else "Starting..." if self.starting else "Stopped"
-        if coordinator and coordinator.restarting:
-            text = f"Restarting {', '.join(config.DEVICE_NAMES.get(s, s) for s in coordinator.restarting)}"
+        restarting = bool(coordinator and coordinator.restarting)
+        if restarting:
+            now = time.time()
+            parts = []
+            for serial in sorted(coordinator.restarting):
+                phase, deadline = coordinator.restart_wait.get(serial, ("starting", now))
+                left = f" {stats._duration(max(0, deadline - now))}" if phase == "adb check" else ""
+                parts.append(f"{serial} · {phase}{left}")
+            text = "Restarting " + ", ".join(parts)
         for serial, name in config.DEVICE_NAMES.items():
             text = text.replace(serial, name)
         self.status.configure(text=text, bg=STATUS_COLORS.get(text.split(" ", 1)[0], ui.GREY))
+        color = ui.BLUE if restarting else ui.GREEN
+        if color != self.band_color:
+            self.band_color = color
+            for widget in self.band:
+                widget.configure(bg=color)
+        if self.tray:
+            self.tray.set_tip(f"ADB-YKWP-Dual · {text}")
         self.panel.tick()
         self.root.after(1000, self._tick)
 
@@ -383,6 +419,13 @@ class App:
             self.show(self.emulators_page)
             self.emulators_page.status.set("Tick the two instances to use, then press 'Use these two instances'.")
             return
+        if not all(config.DUAL_CONFIGS.get(s) for s in (config.DEVICE_A, config.DEVICE_B)):
+            self.show_window()
+            self.show(self.config_page)
+            self.config_page.status.set("Choose the clicker config to play, then press Send. Start needs it.")
+            messagebox.showwarning("ADB-YKWP-Dual", "No clicker config chosen yet.\n\nChoose the config to play "
+                                                    "on this page and press Send, then press Start again.")
+            return
         if self.starting or self.coordinator:
             return
         self.starting = True
@@ -390,11 +433,19 @@ class App:
         def job():
             for attempt in range(10):
                 try:
-                    return handoff.start()
+                    coordinator = handoff.start()
+                    break
                 except OSError:
                     if attempt == 9:
                         raise
                     time.sleep(0.5)
+            workers = [threading.Thread(target=handoff.prepare_device, args=(serial,), daemon=True)
+                       for serial in (config.DEVICE_A, config.DEVICE_B)]
+            for worker in workers:
+                worker.start()
+            for worker in workers:
+                worker.join()
+            return coordinator
 
         def done(result) -> None:
             self.starting = False
@@ -402,6 +453,7 @@ class App:
                 messagebox.showerror("ADB-YKWP-Dual", f"Could not start: {result}")
                 return
             self.coordinator = result
+            self.started_at = time.time()
 
         self.run_job(job, done)
 
@@ -427,12 +479,79 @@ class App:
     def settings_saved(self) -> None:
         handoff.set_file_logging(config.WRITE_LOGS)
 
-    def restart_now(self) -> None:
+    def restart_now(self) -> bool:
         if not self.coordinator or self.coordinator.idle is None:
             messagebox.showinfo("Restart", "Start first and wait until one emulator is playing: the waiting one "
                                            "restarts first, then the other.")
-            return
+            return False
         self.coordinator.restart_requested = True
+        logging.getLogger("coordinator").info("restart of both emulators asked from the panel")
+        return True
+
+    def _tray_menu(self) -> list:
+        running = self.coordinator is not None
+        return [("Open panel", self.show_window, True),
+                ("Stop" if running else "Start", self.toggle, not self.starting),
+                ("Restart both now", self.restart_now, running),
+                None,
+                ("Exit", self.quit, True)]
+
+    def show_window(self) -> None:
+        self.root.deiconify()
+        self.root.lift()
+        self.root.focus_force()
+
+    def close(self) -> None:
+        choice = settings.load()["on_close"] if self.tray else "exit"
+        if choice == "ask":
+            choice = self._ask_close()
+        if choice == "tray":
+            self.root.withdraw()
+        elif choice == "exit":
+            self.quit()
+
+    def _ask_close(self) -> str | None:
+        dialog = tk.Toplevel(self.root, bg=ui.CARD, padx=20, pady=16)
+        dialog.title("ADB-YKWP-Dual")
+        dialog.resizable(False, False)
+        dialog.transient(self.root)
+        answer: list[str | None] = [None]
+        remember = tk.BooleanVar()
+        tk.Label(dialog, text="Keep the program running in the tray, next to the clock,\nor close it completely?",
+                 bg=ui.CARD, fg=ui.TEXT, font=(ui.FONT, 10), justify="left").pack(anchor="w")
+        ttk.Checkbutton(dialog, text="Don't ask again (change it in Settings)", variable=remember).pack(
+            anchor="w", pady=(10, 12))
+        buttons = tk.Frame(dialog, bg=ui.CARD)
+        buttons.pack(fill="x")
+
+        def pick(choice: str | None) -> None:
+            answer[0] = choice
+            if choice and remember.get():
+                data = settings.load()
+                data["on_close"] = choice
+                settings.save(data)
+            dialog.destroy()
+
+        ttk.Button(buttons, text="Minimize to tray", style="Big.TButton", command=lambda: pick("tray")).pack(
+            side="left")
+        ttk.Button(buttons, text="Close completely", command=lambda: pick("exit")).pack(side="left", padx=8)
+        ttk.Button(buttons, text="Cancel", command=lambda: pick(None)).pack(side="right")
+        dialog.protocol("WM_DELETE_WINDOW", lambda: pick(None))
+        dialog.update_idletasks()
+        x = self.root.winfo_rootx() + (self.root.winfo_width() - dialog.winfo_width()) // 2
+        y = self.root.winfo_rooty() + (self.root.winfo_height() - dialog.winfo_height()) // 3
+        dialog.geometry(f"+{max(0, x)}+{max(0, y)}")
+        dialog.grab_set()
+        self.root.wait_window(dialog)
+        return answer[0]
+
+    def quit(self) -> None:
+        if self.tray:
+            self.tray.close()
+        coordinator, self.coordinator = self.coordinator, None
+        if coordinator:
+            handoff.stop(coordinator)
+        self.root.destroy()
 
     @staticmethod
     def open_path(path) -> None:
