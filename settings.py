@@ -13,6 +13,7 @@ import zipfile
 from pathlib import Path
 
 APP_NAME = "dual-login"
+NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 
 def data_dir() -> Path:
@@ -132,8 +133,9 @@ def ensure_adb(confirm_download=_console_download_adb) -> str:
 
 
 def list_devices(adb: str) -> list[str]:
-    subprocess.run([adb, "start-server"], capture_output=True, timeout=30)
-    out = subprocess.run([adb, "devices"], capture_output=True, text=True, timeout=30).stdout
+    subprocess.run([adb, "start-server"], capture_output=True, timeout=30, creationflags=NO_WINDOW)
+    out = subprocess.run([adb, "devices"], capture_output=True, text=True, timeout=30,
+                         creationflags=NO_WINDOW).stdout
     return [line.split()[0] for line in out.splitlines()[1:] if line.strip().endswith("device")]
 
 
@@ -145,7 +147,8 @@ def connect_local_instances(adb: str) -> None:
                 pass
         except OSError:
             continue
-        subprocess.run([adb, "connect", f"127.0.0.1:{port}"], capture_output=True, timeout=30)
+        subprocess.run([adb, "connect", f"127.0.0.1:{port}"], capture_output=True, timeout=30,
+                       creationflags=NO_WINDOW)
 
 
 # ---- first-time setup ----

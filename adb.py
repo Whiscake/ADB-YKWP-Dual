@@ -8,10 +8,12 @@ import settings
 ADB_BIN = settings.find_adb() or "adb"
 TAP_SETTLE_SECONDS = 0.25
 ADB_TIMEOUT_SECONDS = 10.0
+NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 
 def _run(*args: str, check: bool) -> None:
-    subprocess.run([ADB_BIN, *args], capture_output=True, check=check, timeout=ADB_TIMEOUT_SECONDS)
+    subprocess.run([ADB_BIN, *args], capture_output=True, check=check, timeout=ADB_TIMEOUT_SECONDS,
+                   creationflags=NO_WINDOW)
 
 
 def restart_server() -> None:
@@ -26,7 +28,7 @@ def connect(serial: str) -> None:
 def attached() -> set[str]:
     """Serials adb currently lists in the usable 'device' state (not offline or unauthorized)."""
     out = subprocess.run([ADB_BIN, "devices"], capture_output=True, text=True, check=False,
-                         timeout=ADB_TIMEOUT_SECONDS).stdout
+                         timeout=ADB_TIMEOUT_SECONDS, creationflags=NO_WINDOW).stdout
     rows = (line.split() for line in out.splitlines()[1:])
     return {row[0] for row in rows if len(row) == 2 and row[1] == "device"}
 
@@ -80,7 +82,7 @@ def reverse(serial: str, port: int) -> None:
 
 def is_reversed(serial: str, port: int) -> bool:
     out = subprocess.run([ADB_BIN, "-s", serial, "reverse", "--list"], capture_output=True, text=True, check=False,
-                         timeout=ADB_TIMEOUT_SECONDS).stdout
+                         timeout=ADB_TIMEOUT_SECONDS, creationflags=NO_WINDOW).stdout
     return f"tcp:{port} tcp:{port}" in out
 
 
@@ -94,14 +96,14 @@ def push_bridge(serial: str, port: int, token: str) -> None:
 
 def installed_clicker(serial: str) -> str | None:
     out = subprocess.run([ADB_BIN, "-s", serial, "shell", "pm", "list", "packages"], capture_output=True, text=True,
-                         check=False, timeout=ADB_TIMEOUT_SECONDS).stdout.split()
+                         check=False, timeout=ADB_TIMEOUT_SECONDS, creationflags=NO_WINDOW).stdout.split()
     return next((package for package in CLICKER_PACKAGES if f"package:{package}" in out), None)
 
 
 def _shell_output(serial: str, *args: str) -> str:
     try:
         return subprocess.run([ADB_BIN, "-s", serial, "shell", *args], capture_output=True, text=True, check=False,
-                              timeout=ADB_TIMEOUT_SECONDS).stdout.strip()
+                              timeout=ADB_TIMEOUT_SECONDS, creationflags=NO_WINDOW).stdout.strip()
     except subprocess.TimeoutExpired:
         return ""
 

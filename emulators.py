@@ -13,7 +13,7 @@ BACKUP_RECEIVER = "com.buzbuz.smartautoclicker.BackupReceiver"
 EXPORT_FILE = "dual_export.zip"
 IMPORT_FILE = "dual_import.zip"
 WINDOWS = platform.system() == "Windows"
-NO_WINDOW = subprocess.CREATE_NO_WINDOW if WINDOWS else 0
+NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 
 @dataclass
