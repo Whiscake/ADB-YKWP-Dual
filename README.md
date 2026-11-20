@@ -118,8 +118,8 @@ Setting it up follows the same tutorial:
    instance.
 3. **⚙ Settings:** the same settings as in dual mode.
 
-On the panel each instance has its own box: its state (playing, stuck, restarting), its clears, points, average
-clear time and points per hour, its own *points per clear* (instances can give different points), its config menu
+On the panel each instance has its own box: its state (playing, stuck, restarting), its stats (the same ones dual
+mode shows for the pair, see *Stats* below), its own *points per clear* (instances can give different points), its config menu
 and a **⟳** button that restarts it right away. While playing, for each
 instance on its own:
 
@@ -149,9 +149,17 @@ The stats are kept per instance and never mixed.
   and unlinks its clicker; add it back from ⧉.
 - The bridge address, port and token are in ⚙ Settings, at the bottom. You don't need them: Send and Start set them in
   the clicker for you. They are only for a clicker set up by hand.
-- **Stats:** clears this run, clear times, uptime (time since Start, with the time lost while stuck), points per hour
-  and per day, and the forecast. The points per battle can be changed right next to *Points*.
-- **Log:** what the program is doing. The same lines are saved in the log files.
+- Next to Start: how long the panel has been open and how long it has been running since Start.
+- **Stats** (the same in both modes: for the pair in dual mode, for each instance in single mode): clears and points
+  since Start, points per hour and per 24 hours, average clear time with the fastest and slowest under it, how long
+  ago the last clear was, uptime (the time not stuck since Start, at most the uptime window) and downtime, and the
+  forecast when a target date is set. The points per battle can be changed right next to the stats.
+- **Log:** what the program is doing. The same lines are saved in the log files. In the bottom right corner, in dual
+  mode, the login delay: the time from a stage clear reaching the program to the login tap on the other instance
+  (last one and average).
+- **Fast login tap:** at Start the program finds each instance's touch screen and keeps an adb shell open on it, so the
+  login tap is a few milliseconds instead of the quarter of a second to a second of `input tap`. If the touch screen
+  can't be written directly (the log says so at Start), it uses `input tap` as before.
 - While an instance restarts, the band at the top turns blue and the status shows each step; while the program waits
   for the instance to answer on adb again, it shows the time left.
 

@@ -17,6 +17,7 @@ import logging.handlers
 import re
 import threading
 import time
+from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs
@@ -105,6 +106,7 @@ class Coordinator:
         self.restart_wait: dict[str, tuple[str, float]] = {}
         self.last_rescue_at = 0.0
         self.last_event: dict[str, tuple[str, float]] = {}
+        self.login_delays: deque = deque(maxlen=50)
         self.cycle_started_at = time.time()
         self.stopped = threading.Event()
         self.server: ThreadingHTTPServer | None = None
@@ -114,7 +116,7 @@ class Coordinator:
     def idle(self) -> str | None:
         return None if self.active is None else _other(self.active)
 
-    def on_stage_clear(self, serial: str) -> str:
+    def on_stage_clear(self, serial: str, received: float | None = None) -> str:
         """Returns a human readable outcome. Safe to call concurrently; repeats for one clear are ignored."""
         with self._lock:
             if self.active is None:
@@ -131,12 +133,15 @@ class Coordinator:
                 return f"ignored: {serial} became active {elapsed:.1f}s ago, too soon to have cleared"
 
             cleared, idle = self.active, self.idle
-            log.info("stage clear detected on %s", cleared)
-            time.sleep(config.STAGE_CLEAR_TAP_DELAY_SECONDS)
+            if config.STAGE_CLEAR_TAP_DELAY_SECONDS > 0:
+                time.sleep(config.STAGE_CLEAR_TAP_DELAY_SECONDS)
             x, y = adb.scaled(idle, *config.LOGIN_BUTTON_COORDS)
-            log.info("tapping login on %s at (%d, %d)", idle, x, y)
             adb.tap(idle, x, y)
             self.last_login_tap = time.time()
+            if received is not None:
+                self.login_delays.append((time.perf_counter() - received) * 1000)
+            log.info("stage clear detected on %s", cleared)
+            log.info("tapped login on %s at (%d, %d)", idle, x, y)
             log.info("force-stopping %s on %s to skip results animation", config.GAME_PACKAGE, cleared)
             try:
                 adb.force_stop(cleared, config.GAME_PACKAGE)
@@ -317,6 +322,8 @@ def reboot_and_resume(serial: str, phases: dict) -> None:
         time.sleep(5)
         adb.start_game(serial, config.GAME_PACKAGE)
         emulators.sort_windows()
+        if config.MODE == "dual":
+            adb.prepare_touch(serial)
         log.info("%s restarted and resumed", serial)
     except Exception as exc:
         log.error("restart of %s failed: %s", serial, exc)
@@ -423,6 +430,7 @@ def make_handler(coordinator: Coordinator):
             self._reply(200, f"ok active={getattr(coordinator, 'active', None)}")
 
         def do_POST(self) -> None:
+            received = time.perf_counter()
             if self.path != "/adb":
                 return self._reply(404, "not found")
             length = int(self.headers.get("Content-Length", 0))
@@ -447,15 +455,15 @@ def make_handler(coordinator: Coordinator):
                                 raw, self.client_address[0], "|".join(DEVICES))
                 return self._reply(400, f"expected '<event-name> <{'|'.join(DEVICES)}>'")
 
-            threading.Thread(target=self._handle, args=(command[0], command[1]), daemon=True).start()
+            threading.Thread(target=self._handle, args=(command[0], command[1], received), daemon=True).start()
             self._reply(200, "accepted")
 
         @staticmethod
-        def _handle(name: str, serial: str) -> None:
+        def _handle(name: str, serial: str, received: float) -> None:
             coordinator.last_event[serial] = (name, time.time())
             try:
                 if name == "stage-clear":
-                    outcome = coordinator.on_stage_clear(serial)
+                    outcome = coordinator.on_stage_clear(serial, received)
                 elif name == "login-screen":
                     outcome = coordinator.on_login_screen(serial)
                 else:
@@ -493,6 +501,8 @@ def start(active: str | None = None, rooms: tuple[str, ...] | None = None) -> Co
             size = adb.screen_size(serial)
             log.info("%s attached to adb, screen %s", serial, f"{size[0]}x{size[1]}" if size else "unknown")
             link_clicker(serial)
+            if config.MODE == "dual" and not adb.prepare_touch(serial):
+                log.info("%s: login is tapped with 'input tap' (its touch screen can't be written directly)", serial)
         else:
             log.error("%s could not be attached to adb; the watchdog keeps retrying", serial)
 
@@ -511,6 +521,7 @@ def start(active: str | None = None, rooms: tuple[str, ...] | None = None) -> Co
 
 def stop(coordinator: Coordinator) -> None:
     coordinator.stopped.set()
+    adb.close_touch()
     if coordinator.server:
         coordinator.server.shutdown()
         coordinator.server.server_close()

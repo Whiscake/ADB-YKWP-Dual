@@ -123,6 +123,9 @@ class PanelPage(ui.Page):
                                bg=ui.GREEN_DARK, activebackground=ui.GREEN, activeforeground="white", relief="flat",
                                cursor="hand2", command=app.toggle)
         self.start.pack(side="left", ipady=4)
+        self.session = tk.Label(toolbar, bg=ui.BACKGROUND, fg=ui.MUTED, font=(ui.FONT, 9), anchor="w",
+                                justify="left")
+        self.session.pack(side="left", padx=(12, 0))
         for symbol, tip, command in (("?", "Tutorial", app.start_tutorial),
                                      ("⇄", "Change mode (dual or single)", app.change_mode),
                                      ("⚙", "Settings", lambda: app.show(app.settings_page)),
@@ -143,14 +146,10 @@ class PanelPage(ui.Page):
         self.totals_title = tk.Label(head, bg=ui.CARD, fg=ui.GREEN_DARK, font=(ui.FONT, 10, "bold"))
         self.totals_title.pack(side="left")
         self._points_per_clear(head).pack(side="right")
-        cells = tk.Frame(totals, bg=ui.CARD)
-        cells.pack(fill="x", pady=(4, 0))
-        self.total = {key: figure(cells, caption, index) for index, (key, caption) in enumerate(
-            (("clears", "clears"), ("points", "points"), ("hour", "points / hour"), ("avg", "avg clear"),
-             ("uptime", "since Start")))}
+        self.total = StatsGrid(totals, 4, 15)
+        self.total.pack(fill="x", pady=(4, 0))
         self.total_info = tk.Label(totals, bg=ui.CARD, fg=ui.MUTED, font=(ui.FONT, 9), anchor="w")
         self.total_info.pack(fill="x", pady=(6, 0))
-        self.downtime = "0s"
         self.extra = ""
 
         log_card = ui.Card(self, "Log")
@@ -164,6 +163,10 @@ class PanelPage(ui.Page):
         self.log.pack(fill="both", expand=True)
         self.log.tag_configure("warn", foreground=ui.ORANGE)
         self.log.tag_configure("error", foreground=ui.RED)
+        self.delay = tk.Label(log_card, bg=ui.CARD, fg=ui.MUTED, font=(ui.FONT, 8))
+        self.delay.place(relx=1, rely=1, x=-14, y=0, anchor="se")
+        ui.Tooltip(self.delay, "Login delay: from the stage clear reaching this program to the login tap on the "
+                               "other emulator. Last one and average.")
         self.device_info: dict[str, str] = {}
         self.room_stats: dict[str, dict] = {}
 
@@ -208,7 +211,8 @@ class PanelPage(ui.Page):
         for column in range(3):
             used = column < columns
             self.rooms.columnconfigure(column, weight=1 if used else 0, uniform="rooms" if used else "")
-        self.tiles = {serial: RoomTile(self.rooms, self, serial, single) for serial in rooms}
+        self.tiles = {serial: RoomTile(self.rooms, self, serial, single, 4 if columns < 3 else 2)
+                      for serial in rooms}
         for index, tile in enumerate(self.tiles.values()):
             tile.grid(row=index // columns, column=index % columns, sticky="nsew",
                       padx=(0 if index % columns == 0 else 5, 0 if index % columns == columns - 1 else 5),
@@ -262,8 +266,17 @@ class PanelPage(ui.Page):
                              state="disabled" if self.app.starting else "normal")
         now = time.time()
         started = self.app.started_at
-        self.total["uptime"].configure(text=stats._duration(now - started) if running and started else "-")
-        self.total_info.configure(text=f"downtime {self.downtime}{self.extra}")
+        session = [f"panel open {stats._duration(now - self.app.opened_at)}"]
+        session.append(f"running {stats._duration(now - started)}" if running and started else "stopped")
+        self.session.configure(text=" · ".join(session))
+        self.total_info.configure(text=self.extra.removeprefix(" · "))
+        self.total.tick()
+        for tile in self.tiles.values():
+            if tile.grid_stats:
+                tile.grid_stats.tick()
+        delays = list(getattr(coordinator, "login_delays", ()) or ())
+        self.delay.configure(text=f"login delay {delays[-1]:.0f} ms · avg {sum(delays) / len(delays):.0f} ms"
+                             if delays else "")
         for serial, tile in self.tiles.items():
             if not running:
                 tile.state("STOPPED", ui.GREY, "")
@@ -305,35 +318,18 @@ class PanelPage(ui.Page):
             return
         duration = stats._duration
         hours = int(config.STATS_UPTIME_WINDOW_HOURS)
-        clears = s["session_clears"]
-        self.total["clears"].configure(text=str(clears))
-        self.total["points"].configure(text=short(clears * config.POINTS_PER_CLEAR))
-        self.total["hour"].configure(text=short(s["points_per_hour"]) if s["points_per_hour"] else "-")
-        self.total["avg"].configure(text=f"{s['avg_clear']:.2f}s" if s["sample_size"] else "-")
-        self.downtime = duration(s["downtime_seconds"])
-        extra = []
-        if s["sample_size"]:
-            extra.append(f"fastest {s['fastest_clear']:.2f}s · slowest {s['slowest_clear']:.2f}s")
-        if s["points_per_day"]:
-            extra.append(f"~{short(s['points_per_day'])} points / 24h")
-        if s["points_to_target"] is not None:
-            extra.append(f"~{short(s['points_to_target'])} by {s['target']:%Y-%m-%d %H:%M}")
-        self.extra = "".join(f" · {part}" for part in extra)
+        groups = s.get("groups", {})
+        if "" in groups:
+            self.total.show(groups[""])
+        self.extra = forecast(groups.get(""), s)
         for serial, tile in self.tiles.items():
             restarts = s["restarts"].get(serial, 0)
             up = s["device_uptime"].get(serial)
             on = f"on for {duration(up)}" if up is not None else "not reachable"
             info = f"{on} · {restarts} restart{'' if restarts == 1 else 's'} in {hours}h"
-            room = s["rooms"].get(serial)
-            if config.MODE == "single":
-                room = room or {"clears": 0, "avg_clear": None, "downtime_seconds": 0}
-                points = config.ROOM_POINTS.get(serial, config.POINTS_PER_CLEAR)
-                tile.figures["clears"].configure(text=str(room["clears"]))
-                tile.figures["points"].configure(text=short(room["clears"] * points))
-                tile.figures["avg"].configure(text=f"{room['avg_clear']:.2f}s" if room["avg_clear"] else "-")
-                tile.figures["hour"].configure(text=short(points / room["avg_clear"] * 3600)
-                                               if room["avg_clear"] else "-")
-                info += f" · downtime {duration(room['downtime_seconds'])}"
+            if tile.grid_stats and serial in groups:
+                tile.grid_stats.show(groups[serial])
+                info += forecast(groups[serial], s)
             tile.info.configure(text=info)
         self.tick()
 
@@ -346,14 +342,61 @@ def short(number: float) -> str:
     return f"{number:.0f}"
 
 
-def figure(parent: tk.Misc, caption: str, column: int) -> tk.Label:
-    parent.columnconfigure(column, weight=1, uniform="figures")
-    cell = tk.Frame(parent, bg=ui.CARD)
-    cell.grid(row=0, column=column, sticky="w", pady=2)
-    value = tk.Label(cell, text="-", bg=ui.CARD, fg=ui.TEXT, font=(ui.FONT, 16, "bold"))
-    value.pack(anchor="w")
-    tk.Label(cell, text=caption, bg=ui.CARD, fg=ui.MUTED, font=(ui.FONT, 8)).pack(anchor="w")
-    return value
+def forecast(group: dict | None, s: dict) -> str:
+    if group and group["points_to_target"] is not None:
+        return f" · ~{short(group['points_to_target'])} points by {s['target']:%Y-%m-%d %H:%M}"
+    return ""
+
+
+def seconds(value: float | None) -> str:
+    return f"{value:.2f}s" if value is not None else "-"
+
+
+class StatsGrid(tk.Frame):
+    """The same figures for the pair in dual mode and for every room in single mode."""
+    FIELDS = (("clears", "clears"), ("points", "points"), ("hour", "points / hour"), ("day", "points / 24h"),
+              ("avg", "avg clear"), ("last", "last clear"), ("uptime", "uptime"), ("downtime", "downtime"))
+
+    def __init__(self, parent: tk.Misc, columns: int, size: int) -> None:
+        super().__init__(parent, bg=ui.CARD)
+        self.values: dict[str, tk.Label] = {}
+        self.last_clear = None
+        self.split = " · " if columns > 2 else chr(10)
+        for column in range(columns):
+            self.columnconfigure(column, weight=1, uniform="figures")
+        for index, (key, caption) in enumerate(self.FIELDS):
+            cell = tk.Frame(self, bg=ui.CARD)
+            cell.grid(row=index // columns, column=index % columns, sticky="nw", pady=(4, 2))
+            tk.Label(cell, text=caption.upper(), bg=ui.CARD, fg=ui.MUTED, font=(ui.FONT, 8, "bold")).pack(anchor="w")
+            value = tk.Label(cell, text="-", bg=ui.CARD, fg=ui.TEXT, font=(ui.FONT, size, "bold"))
+            value.pack(anchor="w")
+            self.values[key] = value
+            if key == "avg":
+                self.range = tk.Label(cell, text="", bg=ui.CARD, fg=ui.MUTED, font=(ui.FONT, 8), justify="left")
+                self.range.pack(anchor="w")
+        ui.Tooltip(self, f"Since Start. Clear times use the last {config.STATS_CLEAR_SAMPLE_SIZE} clears; uptime "
+                         f"is the time not stuck, over the run (at most {int(config.STATS_UPTIME_WINDOW_HOURS)}h).")
+
+    def show(self, g: dict) -> None:
+        figures = {
+            "clears": str(g["clears"]),
+            "points": short(g["points"]),
+            "hour": short(g["points_per_hour"]) if g["points_per_hour"] else "-",
+            "day": short(g["points_per_day"]) if g["points_per_day"] else "-",
+            "avg": seconds(g["avg_clear"]),
+            "uptime": f"{g['uptime_pct']:.2f}%",
+            "downtime": stats._duration(g["downtime_seconds"]),
+        }
+        for key, text in figures.items():
+            self.values[key].configure(text=text)
+        self.range.configure(text=f"fastest {seconds(g['fastest_clear'])}{self.split}slowest {seconds(g['slowest_clear'])}"
+                             if g["sample_size"] else "")
+        self.last_clear = g["last_clear"]
+        self.tick()
+
+    def tick(self) -> None:
+        self.values["last"].configure(text=f"{stats._duration((datetime.now() - self.last_clear).total_seconds())}"
+                                           f" ago" if self.last_clear else "-")
 
 
 def unlink_button(parent: tk.Misc, command) -> tk.Frame:
@@ -376,7 +419,7 @@ def unlink_button(parent: tk.Misc, command) -> tk.Frame:
 class RoomTile(tk.Frame):
     """One room: its state, its numbers in single mode, the config it plays and its restart button."""
 
-    def __init__(self, parent: tk.Misc, panel: PanelPage, serial: str, single: bool) -> None:
+    def __init__(self, parent: tk.Misc, panel: PanelPage, serial: str, single: bool, figures: int = 2) -> None:
         super().__init__(parent, bg=ui.CARD, highlightbackground=ui.BORDER, highlightthickness=1, padx=12, pady=10)
         tk.Label(self, text=config.DEVICE_NAMES.get(serial, serial), bg=ui.CARD, fg=ui.TEXT,
                  font=(ui.FONT, 12, "bold"), anchor="w").pack(fill="x")
@@ -388,19 +431,10 @@ class RoomTile(tk.Frame):
         self.pill.pack(side="left")
         self.detail = tk.Label(self, bg=ui.CARD, fg=ui.TEXT, font=(ui.FONT, 9), anchor="w")
         self.detail.pack(fill="x", pady=(4, 0))
-        self.figures: dict[str, tk.Label] = {}
+        self.grid_stats: StatsGrid | None = None
         if single:
-            grid = tk.Frame(self, bg=ui.CARD)
-            grid.pack(fill="x", pady=(6, 0))
-            for index, (key, caption) in enumerate((("clears", "clears"), ("points", "points"),
-                                                     ("avg", "avg clear"), ("hour", "points / hour"))):
-                grid.columnconfigure(index % 2, weight=1, uniform="figures")
-                cell = tk.Frame(grid, bg=ui.CARD)
-                cell.grid(row=index // 2, column=index % 2, sticky="w", pady=2)
-                value = tk.Label(cell, text="-", bg=ui.CARD, fg=ui.TEXT, font=(ui.FONT, 15, "bold"))
-                value.pack(anchor="w")
-                tk.Label(cell, text=caption, bg=ui.CARD, fg=ui.MUTED, font=(ui.FONT, 8)).pack(anchor="w")
-                self.figures[key] = value
+            self.grid_stats = StatsGrid(self, figures, 13)
+            self.grid_stats.pack(fill="x", pady=(6, 0))
             points = tk.Frame(self, bg=ui.CARD)
             points.pack(fill="x", pady=(4, 0))
             tk.Label(points, text="points per clear", bg=ui.CARD, fg=ui.MUTED, font=(ui.FONT, 9)).pack(side="left")
@@ -448,6 +482,7 @@ class App:
         self.link = handoff.link_clicker
         self.coordinator = None
         self.started_at = 0.0
+        self.opened_at = time.time()
         self.starting = False
         self.tray = None
         self.opened = False
@@ -458,7 +493,7 @@ class App:
         logging.getLogger("coordinator").addHandler(QueueHandler(self.events))
 
         root.title(app_title())
-        root.geometry("800x700")
+        root.geometry("820x800")
         root.minsize(640, 620)
         root.configure(bg=ui.BACKGROUND)
         ui.style(root)

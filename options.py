@@ -45,7 +45,7 @@ GROUPS = [
          "Two login screens reported within this time mean both emulators are waiting, so one gets the login tap."),
         ("login_retry_seconds", "Login retry (s)", "Shortest time between two login taps."),
         ("stage_clear_tap_delay_seconds", "Login tap delay (s)",
-         "Wait after a stage clear before tapping login on the other emulator."),
+         "Wait after a stage clear before tapping login on the other emulator. 0 taps at once."),
     ]),
     ("Login button", [
         ("login_button_x", "Login button X", LOGIN_TIP),

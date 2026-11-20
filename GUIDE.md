@@ -106,7 +106,7 @@ file to start over with a new token.
 | `tap_jitter_pixels` | 8 | Random offset added to each tap. 0 turns it off |
 | `ntfy_url` | blank | Your ntfy.sh topic URL for phone alerts. Blank means no alerts |
 | `min_stage_seconds` | 18 | Clears sooner than this after an instance starts playing are ignored |
-| `stage_clear_tap_delay_seconds` | 0.2 | Pause between a clear and the login tap |
+| `stage_clear_tap_delay_seconds` | 0 | Pause between a clear and the login tap (0 taps at once) |
 | `stuck_after_seconds` | 40 | No clear for this long: shown as stuck |
 | `alert_after_seconds` | 240 | No clear for this long: alert sent |
 | `alert_repeat_seconds` | 300 | Minimum gap between repeated alerts |
