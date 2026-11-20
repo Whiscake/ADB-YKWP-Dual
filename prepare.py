@@ -84,6 +84,8 @@ class ConfigPage(ui.Page):
         ui.info(actions, "Your config is not changed. Each emulator gets its own copy with the dual commands "
                          "added, and the program links both clickers to this computer.", ui.BACKGROUND).pack(
             side="left")
+        self.missing = tk.Label(actions, bg=ui.BACKGROUND, fg=ui.ORANGE, font=(ui.FONT, 9), anchor="w")
+        self.missing.pack(side="left", padx=(8, 0))
 
         self.status = tk.StringVar()
         tk.Label(self, textvariable=self.status, bg=ui.BACKGROUND, fg=ui.MUTED, anchor="w", justify="left",
@@ -153,10 +155,20 @@ class ConfigPage(ui.Page):
         index = combo.current() - 1
         return scenario.events[index][0] if scenario and index >= 0 else None
 
+    def _missing(self) -> str:
+        """Why Send is greyed out, said next to it."""
+        if len(self._devices()) < 2:
+            return "Pick two emulators first: press ⧉ on the panel."
+        if self._chosen() is None:
+            return "Choose where your config is (1) and the config (2)."
+        if self._event(self.clear_event) is None and self._event(self.login_event) is None:
+            return "Choose the stage clear event and the login screen event."
+        return ""
+
     def _update(self) -> None:
-        ready = (not self.busy and len(self._devices()) == 2 and self._chosen() is not None
-                 and (self._event(self.clear_event) or self._event(self.login_event)))
-        self.send.state(["!disabled"] if ready else ["disabled"])
+        missing = "" if self.busy else self._missing()
+        self.missing.configure(text=missing)
+        self.send.state(["!disabled"] if not self.busy and not missing else ["disabled"])
 
     def _work(self, message: str, job, done) -> None:
         self.busy = True
@@ -246,6 +258,8 @@ class SoloConfigPage(ui.Page):
                          "command added to its battle end event, and the program links its clicker to this "
                          "computer. Rooms with no config chosen are left as they are.", ui.BACKGROUND).pack(
             side="left")
+        self.missing = tk.Label(actions, bg=ui.BACKGROUND, fg=ui.ORANGE, font=(ui.FONT, 9), anchor="w")
+        self.missing.pack(side="left", padx=(8, 0))
 
         self.status = tk.StringVar()
         tk.Label(self, textvariable=self.status, bg=ui.BACKGROUND, fg=ui.MUTED, anchor="w", justify="left",
@@ -331,11 +345,15 @@ class SoloConfigPage(ui.Page):
         self._update()
 
     def _ready(self) -> list[str]:
-        return [serial for serial, _ in self.rooms if self._event(serial)]
+        return [serial for serial, _ in self.rooms if self._event(serial) is not None]
 
     def _update(self) -> None:
         self.read.state(["disabled"] if self.busy or not self.rooms else ["!disabled"])
-        self.send.state(["!disabled"] if self._ready() and not self.busy else ["disabled"])
+        ready = self._ready()
+        self.missing.configure(text="" if self.busy or ready else
+                               "Pick the rooms first: press ⧉ on the panel." if not self.rooms else
+                               "Press Read configs, then choose a config and its battle end event for a room.")
+        self.send.state(["!disabled"] if ready and not self.busy else ["disabled"])
 
     def _work(self, message: str, job, done) -> None:
         self.busy = True
