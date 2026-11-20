@@ -1,4 +1,5 @@
 import random
+import re
 import shlex
 import subprocess
 import time
@@ -61,6 +62,29 @@ def _device_call(serial: str, *args: str) -> None:
         if not ensure_connected(serial):
             raise
         _run("-s", serial, *args, check=True)
+
+
+REFERENCE_SCREEN = (900, 1600)
+_screen_sizes: dict[str, tuple[int, int]] = {}
+
+
+def screen_size(serial: str) -> tuple[int, int] | None:
+    """The instance's portrait resolution, from `wm size` (an override size is listed last, so it wins)."""
+    if serial not in _screen_sizes:
+        sizes = re.findall(r"(\d+)x(\d+)", _shell_output(serial, "wm", "size"))
+        if not sizes:
+            return None
+        width, height = map(int, sizes[-1])
+        _screen_sizes[serial] = (min(width, height), max(width, height))
+    return _screen_sizes[serial]
+
+
+def scaled(serial: str, x: int, y: int) -> tuple[int, int]:
+    """Turns a point on a 900x1600 screen into the same point on the instance's screen."""
+    size = screen_size(serial)
+    if not size:
+        return x, y
+    return round(x * size[0] / REFERENCE_SCREEN[0]), round(y * size[1] / REFERENCE_SCREEN[1])
 
 
 def tap(serial: str, x: int, y: int) -> None:

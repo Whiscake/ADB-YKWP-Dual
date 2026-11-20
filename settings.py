@@ -50,8 +50,8 @@ DEFAULTS = {
     "port": 8765,
     "ntfy_url": "",
     "game_package": "com.Level5.YWP",
-    "login_button_x": 525,
-    "login_button_y": 1187,
+    "login_button_x": 660,
+    "login_button_y": 1484,
     "min_stage_seconds": 18.0,
     "stuck_after_seconds": 40.0,
     "alert_after_seconds": 240.0,
@@ -81,6 +81,8 @@ def load() -> dict:
     data = dict(DEFAULTS)
     if SETTINGS_FILE.exists():
         data.update(json.loads(SETTINGS_FILE.read_text()))
+    if (data["login_button_x"], data["login_button_y"]) == (525, 1187):
+        data["login_button_x"], data["login_button_y"] = 660, 1484
     return data
 
 
