@@ -133,7 +133,7 @@ class Coordinator:
             cleared, idle = self.active, self.idle
             log.info("stage clear detected on %s", cleared)
             time.sleep(config.STAGE_CLEAR_TAP_DELAY_SECONDS)
-            x, y = config.LOGIN_BUTTON_COORDS
+            x, y = adb.scaled(idle, *config.LOGIN_BUTTON_COORDS)
             log.info("tapping login on %s at (%d, %d)", idle, x, y)
             adb.tap(idle, x, y)
             self.last_login_tap = time.time()
@@ -172,7 +172,7 @@ class Coordinator:
             if now - self.last_login_tap < config.LOGIN_RETRY_SECONDS:
                 return "ignored: login tapped recently"
             chosen = self.active if self.active in DEVICES else config.DEVICE_A
-            x, y = config.LOGIN_BUTTON_COORDS
+            x, y = adb.scaled(chosen, *config.LOGIN_BUTTON_COORDS)
             log.info("both devices are at login, tapping login on %s at (%d, %d)", chosen, x, y)
             adb.tap(chosen, x, y)
             self.active = chosen
@@ -484,7 +484,8 @@ def start(active: str | None = None) -> Coordinator:
     adb.restart_server()
     for serial in DEVICES:
         if adb.ensure_connected(serial):
-            log.info("%s attached to adb", serial)
+            size = adb.screen_size(serial)
+            log.info("%s attached to adb, screen %s", serial, f"{size[0]}x{size[1]}" if size else "unknown")
             link_clicker(serial)
         else:
             log.error("%s could not be attached to adb; the watchdog keeps retrying", serial)

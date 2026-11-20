@@ -168,7 +168,7 @@ Everything is changed from the **⚙** page. Each setting has an ⓘ that says w
 | Restart both when stuck (s) | 600 | No stage cleared for this long, even after closing the game: both instances restart together. 0 never. LDPlayer only |
 | Stuck after (s) | 40 | No stage clear for this long: shown as stuck. Set it above your slowest stage |
 | Close game after (s) | 300 | Still stuck after this long: the game is closed, both instances go back to login and play resumes. 0 never |
-| Login button X / Y | 525, 1187 | Where login is tapped, in device pixels. 660, 1484 on a 900x1600 instance |
+| Login button X / Y | 660, 1484 | Where login is tapped, in pixels of a 900x1600 screen. Each instance gets the same point on its own resolution |
 | Phone alerts (ntfy URL) | blank | An ntfy.sh topic for alerts on your phone |
 | Closing the window | Ask every time | What the window's X does: ask, minimize to the tray, or close completely |
 | Write log files | on | Not recommended to turn off: the stats are computed from the logs. The logs are deleted when you close the program |

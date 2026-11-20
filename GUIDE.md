@@ -102,7 +102,7 @@ file to start over with a new token.
 | `token` | generated | Secret the clickers send with every event; sent to them on Start |
 | `port` | 8765 | Port the program listens on. Applies after Stop and Start |
 | `game_package` | `com.Level5.YWP` | Android package closed after a clear |
-| `login_button_x`, `login_button_y` | 525, 1187 | Where login is tapped, in device pixels. 660, 1484 on 900x1600 |
+| `login_button_x`, `login_button_y` | 660, 1484 | Where login is tapped, in pixels of a 900x1600 screen; scaled to each instance's resolution (`wm size`). The old default 525, 1187 is read as 660, 1484 |
 | `tap_jitter_pixels` | 8 | Random offset added to each tap. 0 turns it off |
 | `ntfy_url` | blank | Your ntfy.sh topic URL for phone alerts. Blank means no alerts |
 | `min_stage_seconds` | 18 | Clears sooner than this after an instance starts playing are ignored |

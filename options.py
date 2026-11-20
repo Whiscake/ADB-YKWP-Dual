@@ -7,6 +7,8 @@ import emulators
 import settings
 import ui
 
+LOGIN_TIP = ("Where the login button is on the game's login screen, in pixels of a 900x1600 screen. Each instance "
+             "gets the same point on its own resolution, so it works at any resolution.")
 CHOICES = {"on_close": [("ask", "Ask every time"), ("tray", "Minimize to tray"), ("exit", "Close completely")]}
 GROUPS = [
     ("Your points", [
@@ -46,8 +48,8 @@ GROUPS = [
          "Wait after a stage clear before tapping login on the other emulator."),
     ]),
     ("Login button", [
-        ("login_button_x", "Login button X", "Where the login button is on the game's login screen, in pixels."),
-        ("login_button_y", "Login button Y", "Where the login button is on the game's login screen, in pixels."),
+        ("login_button_x", "Login button X", LOGIN_TIP),
+        ("login_button_y", "Login button Y", LOGIN_TIP),
         ("tap_jitter_pixels", "Tap spread (pixels)", "Each tap lands a few random pixels away, like a finger."),
     ]),
     ("Stats and alerts", [
