@@ -9,7 +9,7 @@ handoff, watches for a stuck instance, restarts laggy emulators, and can send ph
 [ntfy.sh](https://ntfy.sh).
 
 Contents: [Safety and performance](#safety-and-performance) · [What you need](#what-you-need) · [Install](#install) ·
-[First start: the tutorial](#first-start-the-tutorial) · [The panel](#the-panel) · [Tray](#tray) · [Settings](#settings) · [Keep your computer awake](#keep-your-computer-awake) ·
+[First start: the tutorial](#first-start-the-tutorial) · [Single mode](#single-mode) · [The panel](#the-panel) · [Tray](#tray) · [Settings](#settings) · [Keep your computer awake](#keep-your-computer-awake) ·
 [Troubleshooting](#troubleshooting)
 
 ## Safety and performance
@@ -60,7 +60,8 @@ To build the Windows program yourself: `py -m pip install pyinstaller`, then `py
 
 ## First start: the tutorial
 
-The first time, the program asks whether you want the tutorial. **Skip tutorial** goes straight to the panel; you can
+The program first asks for the mode: **Dual** (described here) or **Single** (see [Single mode](#single-mode)).
+The first time in each mode, it asks whether you want the tutorial. **Skip tutorial** goes straight to the panel; you can
 start the tutorial again any time with the **?** button. The green band at the top always says what to do on the
 screen you are on, and the green numbered circles match its steps.
 
@@ -93,6 +94,40 @@ The program also links both clickers to this computer through adb, so there is n
 Type the points one battle gives you (the stats use it). The emulators restart by themselves every 20 hours, one at a
 time while the other keeps playing, to clear the lag (LDPlayer only); change it under *Emulator restart*. The other settings work as they are for most people; each has
 an ⓘ that explains it. See [Settings](#settings).
+
+## Single mode
+
+When the program opens it asks how the rooms play (the **⇄** button on the panel changes it later, and *Ask the mode
+when the program opens* in the settings turns the question off):
+
+- **Dual:** two instances take turns, as described above.
+- **Single:** every instance plays on its own with its own config, and the program only makes sure none of them gets
+  stuck. There is no handoff and no login tap, and it works with one instance or with several at once.
+
+Setting it up follows the same tutorial:
+
+1. **⧉ Emulators:** tick every instance you want to watch, then press **Use these instances**.
+2. **✎ Clicker config:** the program reads the configs of every instance by itself (**Read configs** reads them
+   again). For each instance choose its config and its **battle end event**: an event that runs once at the end of
+   every battle, like the one that presses OK on the defeat or on the stage clear screen. **Send to every room** gives
+   each instance a copy of its own config called *(your config) (solo (instance))*, and the panel picks it for that
+   instance.
+3. **⚙ Settings:** the same settings as in dual mode.
+
+On the panel each instance has its own box: its state (playing, stuck, restarting), its clears, points, average
+clear time and points per hour, its own *points per clear* (instances can give different points), its config menu
+and a **⟳** button that restarts it right away. While playing, for each
+instance on its own:
+
+| No battle ended for | What happens |
+|---|---|
+| *Stuck after* (40 s) | The instance is shown as stuck |
+| *Alert after* (240 s) | Phone alert, repeated every *Repeat alert every* |
+| *Close game after* (300 s) | The game is closed and opened again |
+| *Restart when stuck* (600 s) | The emulator restarts, then the clicker and the game start again (LDPlayer only) |
+
+The regular restart every 20 hours restarts one instance at a time, and **Restart all now** does the same right away.
+The stats are kept per instance and never mixed.
 
 ## The panel
 
@@ -136,7 +171,7 @@ Everything is changed from the **⚙** page. Each setting has an ⓘ that says w
 | Login button X / Y | 525, 1187 | Where login is tapped, in device pixels. 660, 1484 on a 900x1600 instance |
 | Phone alerts (ntfy URL) | blank | An ntfy.sh topic for alerts on your phone |
 | Closing the window | Ask every time | What the window's X does: ask, minimize to the tray, or close completely |
-| Write log files | on | Not recommended to turn off: the stats are computed from the logs. Logs older than 3 days are deleted |
+| Write log files | on | Not recommended to turn off: the stats are computed from the logs. The logs are deleted when you close the program |
 
 The values are kept in `settings.json`, in `%APPDATA%\dual-login\` on Windows, `~/Library/Application Support/dual-login/`
 on Mac and `~/.config/dual-login/` on Linux. The **Settings file** and **Log folder** buttons open them. The full list

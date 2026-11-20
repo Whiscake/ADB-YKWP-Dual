@@ -130,8 +130,8 @@ file to start over with a new token.
 
 ## Logs
 
-`logs/coordinator.log` in the same folder. A new file starts every midnight and files older than 3 days are deleted,
-so the folder stays small. It records handoffs, logins, stuck warnings, restarts, alerts, rejected requests and
+`logs/coordinator.log` in the same folder. A new file starts every midnight, and all the log files are deleted when
+the program is closed, so the folder stays small (the stats start again from zero on the next start). It records handoffs, logins, stuck warnings, restarts, alerts, rejected requests and
 unknown events. The panel's Log shows the same lines.
 
 ## Command line

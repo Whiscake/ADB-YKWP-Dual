@@ -6,11 +6,15 @@ BRIDGE_HOST = "127.0.0.1"
 
 def reload() -> None:
     s = _settings.load()
+    single = s["mode"] == "single"
+    names = {s["device_a"]: s["device_a_name"] or s["device_a"], s["device_b"]: s["device_b_name"] or s["device_b"]}
+    names.update({serial: s["single_names"].get(serial) or serial for serial in s["single_devices"]})
     globals().update(
+        MODE="single" if single else "dual",
         DEVICE_A=s["device_a"],
         DEVICE_B=s["device_b"],
-        DEVICE_NAMES={s["device_a"]: s["device_a_name"] or s["device_a"],
-                      s["device_b"]: s["device_b_name"] or s["device_b"]},
+        DEVICES=tuple(s["single_devices"]) if single else (s["device_a"], s["device_b"]),
+        DEVICE_NAMES={serial: name for serial, name in names.items() if serial},
         BRIDGE_TOKEN=s["token"],
         BRIDGE_PORT=s["port"],
         NTFY_URL=s["ntfy_url"],
@@ -26,6 +30,7 @@ def reload() -> None:
         STAGE_CLEAR_TAP_DELAY_SECONDS=s["stage_clear_tap_delay_seconds"],
         TAP_JITTER_PIXELS=s["tap_jitter_pixels"],
         POINTS_PER_CLEAR=s["points_per_clear"],
+        ROOM_POINTS=s["room_points"],
         FORECAST_TARGET_DATETIME=s["forecast_target_datetime"],
         STATS_INTERVAL_SECONDS=s["stats_interval_seconds"],
         STATS_CLEAR_SAMPLE_SIZE=s["stats_clear_sample_size"],
@@ -33,7 +38,7 @@ def reload() -> None:
         RESTART_EVERY_MINUTES=s["restart_every_minutes"] if s["restart_enabled"] else 0,
         RESTART_BOOT_TIMEOUT_SECONDS=s["restart_boot_timeout_seconds"],
         RESCUE_RESTART_SECONDS=s["rescue_restart_seconds"],
-        DUAL_CONFIGS=s["dual_configs"],
+        CONFIGS=s["single_configs"] if single else s["dual_configs"],
         WRITE_LOGS=s["write_logs"],
     )
 

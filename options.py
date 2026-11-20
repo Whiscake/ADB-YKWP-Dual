@@ -19,14 +19,14 @@ GROUPS = [
     ("Emulator restart", [
         ("restart_enabled", "Restart the emulators regularly",
          "Emulators slow down after hours of play. When this is on, each emulator is restarted in turn while the "
-         "other keeps playing, then its clicker and the game are started again. Works only with LDPlayer: other "
-         "emulators are never restarted."),
+         "other keeps playing (in single mode, one room at a time), then its clicker and the game are started "
+         "again. Works only with LDPlayer: other emulators are never restarted."),
         ("restart_every_minutes", "Every (minutes)", "How long between two restart rounds."),
         ("restart_boot_timeout_seconds", "Wait for restart (s)",
          "How long a restarting emulator may take to come back before you get an alert."),
-        ("rescue_restart_seconds", "Restart both when stuck (s)",
+        ("rescue_restart_seconds", "Restart when stuck (s)",
          "When no stage is cleared for this long, even after the game was closed, both emulators restart "
-         "together. 0 never does. Works only with LDPlayer."),
+         "together (in single mode, only the stuck one). 0 never does. Works only with LDPlayer."),
     ]),
     ("Timing", [
         ("min_stage_seconds", "Shortest stage (s)",
@@ -37,8 +37,8 @@ GROUPS = [
         ("alert_after_seconds", "Alert after (s)", "Still stuck after this long: a phone alert is sent (ntfy)."),
         ("alert_repeat_seconds", "Repeat alert every (s)", "How often the alert is repeated while it stays stuck."),
         ("force_stop_after_seconds", "Close game after (s)",
-         "Still stuck after this long: the game is closed so both emulators go back to login and play resumes. "
-         "0 never closes it."),
+         "Still stuck after this long: the game is closed so both emulators go back to login and play resumes "
+         "(in single mode the game is closed and opened again). 0 never closes it."),
         ("both_at_login_window_seconds", "Both at login window (s)",
          "Two login screens reported within this time mean both emulators are waiting, so one gets the login tap."),
         ("login_retry_seconds", "Login retry (s)", "Shortest time between two login taps."),
@@ -57,14 +57,17 @@ GROUPS = [
          "topic to get alerts on your phone. Empty sends nothing."),
     ]),
     ("Program", [
+        ("ask_mode", "Ask the mode when the program opens",
+         "Ask every time whether to play in dual (two rooms taking turns) or single (each room plays on its own). "
+         "Off, it opens in the last mode used; the ⇄ button on the panel changes it."),
         ("start_automatically", "Start when the program opens",
-         "Start the dual play right away when you open the program."),
+         "Start playing right away when you open the program."),
         ("on_close", "Closing the window",
          "What the X of the window does: ask every time, keep the program running next to the clock "
          "(notification area), or close it completely."),
         ("write_logs", "Write log files",
          "Not recommended to turn off: the stats are computed from the log files, so they stay empty without "
-         "them. Logs older than 3 days are deleted on their own."),
+         "them. The log files are deleted when you close the program."),
         ("game_package", "Game package", "The Android package of the game. Change it only for another game version."),
         ("port", "Port", "The port the clickers reach this program on. Applies after Stop and Start."),
     ]),
@@ -162,8 +165,9 @@ class SettingsPage(ui.Page):
                 self._say(f"✗  {self.labels[key]}: can't be negative.", ui.RED)
                 return False
             data[key] = value
+        rooms = data["single_devices"] if data["mode"] == "single" else (data["device_a"], data["device_b"])
         refused = data["restart_enabled"] and not settings.load()["restart_enabled"] and not all(
-            emulators.restartable(s) for s in (data["device_a"], data["device_b"]) if s)
+            emulators.restartable(s) for s in rooms if s)
         if refused:
             data["restart_enabled"] = False
             self.vars["restart_enabled"].set(False)
@@ -192,7 +196,8 @@ class SettingsPage(ui.Page):
     def _restart_state(self) -> None:
         coordinator = self.app.coordinator
         busy = coordinator is not None and (coordinator.restart_requested or bool(coordinator.restart_pending))
-        self.restart.configure(text="⟳  Restarting..." if busy else "Restart both now")
+        idle = "Restart all now" if config.MODE == "single" else "Restart both now"
+        self.restart.configure(text="⟳  Restarting..." if busy else idle)
         self.restart.state(["disabled"] if busy else ["!disabled"])
         if busy and self.winfo_ismapped():
             self.after(1000, self._restart_state)

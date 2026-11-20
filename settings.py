@@ -39,6 +39,11 @@ DEFAULTS = {
     "device_a_name": "",
     "device_b_name": "",
     "tutorial_done": False,
+    "single_tutorial_done": False,
+    "mode": "dual",
+    "ask_mode": True,
+    "single_devices": [],
+    "single_names": {},
     "start_automatically": True,
     "write_logs": True,
     "token": "",
@@ -67,6 +72,8 @@ DEFAULTS = {
     "rescue_restart_seconds": 600,
     "on_close": "ask",
     "dual_configs": {},
+    "single_configs": {},
+    "room_points": {},
 }
 
 

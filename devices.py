@@ -2,6 +2,7 @@
 import tkinter as tk
 from tkinter import ttk
 
+import config
 import emulators
 import settings
 import ui
@@ -14,9 +15,16 @@ TICKED, UNTICKED = "☑", "☐"
 
 class EmulatorsPage(ui.Page):
     title = "Emulators"
-    help = ("1  Open both emulator instances and turn on ADB in each instance's settings, then press Refresh.\n"
-            "2  Click two instances to tick them: these are the two that take turns playing.\n"
-            "3  If the Clicker column says missing, press Install clicker.")
+
+    @property
+    def help(self) -> str:
+        if config.MODE == "single":
+            return ("1  Open the emulator instances and turn on ADB in each instance's settings, then press Refresh.\n"
+                    "2  Click the instances to tick them: each one plays on its own and the program watches them all.\n"
+                    "3  If the Clicker column says missing, press Install clicker.")
+        return ("1  Open both emulator instances and turn on ADB in each instance's settings, then press Refresh.\n"
+                "2  Click two instances to tick them: these are the two that take turns playing.\n"
+                "3  If the Clicker column says missing, press Install clicker.")
 
     def __init__(self, app) -> None:
         super().__init__(app)
@@ -72,8 +80,9 @@ class EmulatorsPage(ui.Page):
         self._update_buttons()
 
     def shown(self) -> None:
-        data = settings.load()
-        self.ticked = [s for s in (data["device_a"], data["device_b"]) if s]
+        config.reload()
+        self.ticked = [s for s in config.DEVICES if s]
+        self.use.configure(text="Use these instances" if config.MODE == "single" else "Use these two instances")
         self.use.pack_forget() if self.app.tutorial else self.use.pack(side="right")
         self.refresh()
 
@@ -84,13 +93,16 @@ class EmulatorsPage(ui.Page):
         if serial in self.ticked:
             self.ticked.remove(serial)
         else:
-            self.ticked = (self.ticked + [serial])[-2:]
+            self.ticked = self.ticked + [serial]
+            if config.MODE != "single":
+                self.ticked = self.ticked[-2:]
         self._fill()
 
     def _update_buttons(self) -> None:
         ready = [s for s in self.ticked if s in self.emulators and self.emulators[s].attached]
         self.install.state(["!disabled"] if ready and not self.busy else ["disabled"])
-        self.use.state(["!disabled"] if len(self.ticked) == 2 and not self.busy else ["disabled"])
+        enough = len(self.ticked) >= 1 if config.MODE == "single" else len(self.ticked) == 2
+        self.use.state(["!disabled"] if enough and not self.busy else ["disabled"])
 
     def _work(self, message: str, job, done) -> None:
         self.busy = True
@@ -141,6 +153,8 @@ class EmulatorsPage(ui.Page):
 
     def commit(self) -> bool:
         data = settings.load()
+        if config.MODE == "single":
+            return self._commit_single(data)
         if len(self.ticked) != 2:
             if data["device_a"] and data["device_b"] and not self.ticked:
                 return True
@@ -152,6 +166,23 @@ class EmulatorsPage(ui.Page):
         data["device_a_name"], data["device_b_name"] = names
         settings.save(data)
         self.status.set(f"Saved: {names[0]} and {names[1]}.")
+        if changed:
+            self.app.pair_changed()
+        return True
+
+    def _commit_single(self, data: dict) -> bool:
+        if not self.ticked:
+            if data["single_devices"]:
+                return True
+            self.status.set("Tick at least one instance first.")
+            return False
+        names = {s: self.emulators[s].name if s in self.emulators else data["single_names"].get(s, s)
+                 for s in self.ticked}
+        changed = self.ticked != data["single_devices"]
+        data["single_devices"] = list(self.ticked)
+        data["single_names"] = {**data["single_names"], **names}
+        settings.save(data)
+        self.status.set(f"Saved: {', '.join(names.values())}.")
         if changed:
             self.app.pair_changed()
         return True
