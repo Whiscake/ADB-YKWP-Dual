@@ -728,9 +728,9 @@ class App:
         config.reload()
         if not self._rooms_ready():
             self.show(self.emulators_page)
-            self.emulators_page.status.set("Tick the instances to use, then press 'Use these instances'."
+            self.emulators_page.status.set("Tick the instances to use: they are saved as you tick them."
                                            if config.MODE == "single" else
-                                           "Tick the two instances to use, then press 'Use these two instances'.")
+                                           "Tick the two instances to use: they are saved as you tick them.")
             return
         if self.starting or self.coordinator:
             return

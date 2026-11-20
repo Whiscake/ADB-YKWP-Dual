@@ -71,8 +71,6 @@ class EmulatorsPage(ui.Page):
         self.install.pack(side="left", padx=6)
         ui.info(bottom, "Downloads the clicker app and installs it on the ticked instances. Instances that already have "
                         "it get updated, their configs are kept.", ui.BACKGROUND).pack(side="left")
-        self.use = ttk.Button(bottom, text="Use these two instances", command=self.commit)
-        self.use.pack(side="right")
 
         self.status = tk.StringVar()
         tk.Label(self, textvariable=self.status, bg=ui.BACKGROUND, fg=ui.MUTED, anchor="w", justify="left",
@@ -82,8 +80,6 @@ class EmulatorsPage(ui.Page):
     def shown(self) -> None:
         config.reload()
         self.ticked = [s for s in config.DEVICES if s]
-        self.use.configure(text="Use these instances" if config.MODE == "single" else "Use these two instances")
-        self.use.pack_forget() if self.app.tutorial else self.use.pack(side="right")
         self.refresh()
 
     def _click(self, event) -> None:
@@ -97,12 +93,16 @@ class EmulatorsPage(ui.Page):
             if config.MODE != "single":
                 self.ticked = self.ticked[-2:]
         self._fill()
+        # a tick is saved at once, so the other pages see it without pressing the button below
+        if len(self.ticked) == 2 or (config.MODE == "single" and self.ticked):
+            self.commit()
+        elif config.MODE != "single":
+            self.status.set("Tick one more instance: dual mode plays on two." if self.ticked else
+                            "Tick the two instances to play on.")
 
     def _update_buttons(self) -> None:
         ready = [s for s in self.ticked if s in self.emulators and self.emulators[s].attached]
         self.install.state(["!disabled"] if ready and not self.busy else ["disabled"])
-        enough = len(self.ticked) >= 1 if config.MODE == "single" else len(self.ticked) == 2
-        self.use.state(["!disabled"] if enough and not self.busy else ["disabled"])
 
     def _work(self, message: str, job, done) -> None:
         self.busy = True

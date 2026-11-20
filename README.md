@@ -110,7 +110,7 @@ when the program opens* in the settings turns the question off):
 
 Setting it up follows the same tutorial:
 
-1. **⧉ Emulators:** tick every instance you want to watch, then press **Use these instances**.
+1. **⧉ Emulators:** tick every instance you want to watch. Ticks are saved right away.
 2. **✎ Clicker config:** the program reads the configs of every instance by itself (**Read configs** reads them
    again). For each instance choose its config and its **battle end event**: an event that runs once at the end of
    every battle, like the one that presses OK on the defeat or on the stage clear screen. **Send to every room** gives
