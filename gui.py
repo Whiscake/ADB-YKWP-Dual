@@ -662,7 +662,10 @@ class App:
     def _poll(self) -> None:
         while not self.jobs.empty():
             done, result = self.jobs.get_nowait()
-            done(result)
+            try:
+                done(result)
+            except Exception as exc:  # one failing page must not stop every other job
+                logging.getLogger("coordinator").error("panel error: %s", exc, exc_info=True)
         while not self.events.empty():
             level, line = self.events.get_nowait()
             if level is None:
@@ -728,9 +731,9 @@ class App:
         config.reload()
         if not self._rooms_ready():
             self.show(self.emulators_page)
-            self.emulators_page.status.set("Tick the instances to use, then press 'Use these instances'."
+            self.emulators_page.status.set("Tick the instances to use: they are saved as you tick them."
                                            if config.MODE == "single" else
-                                           "Tick the two instances to use, then press 'Use these two instances'.")
+                                           "Tick the two instances to use: they are saved as you tick them.")
             return
         if self.starting or self.coordinator:
             return
