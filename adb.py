@@ -159,6 +159,10 @@ def clicker_service_ready(serial: str, package: str) -> bool:
     return "SmartAutoClickerService" in _shell_output(serial, "dumpsys", "activity", "services", package)
 
 
+def unlink(serial: str, port: int) -> None:
+    _run("-s", serial, "reverse", "--remove", f"tcp:{port}", check=False)
+
+
 def resume_clicker(serial: str, package: str, scenario: str | None = None) -> None:
     """Lets the clicker record the screen without the consent dialog, then has it play `scenario`, or its last one."""
     _device_call(serial, "shell", "appops", "set", package, "PROJECT_MEDIA", "allow")

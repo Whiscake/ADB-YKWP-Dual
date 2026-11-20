@@ -347,6 +347,11 @@ def prepare_device(serial: str) -> None:
         package = adb.installed_clicker(serial)
         scenario = config.CONFIGS.get(serial)
         adb.resume_clicker(serial, package, scenario)
+        if not adb.wait_until(lambda: adb.clicker_playing(serial, package), 15):
+            log.warning("the clicker on %s did not start, trying again", serial)
+            adb.resume_clicker(serial, package, scenario)
+            if not adb.wait_until(lambda: adb.clicker_playing(serial, package), 15):
+                log.error("the clicker on %s did not start: open it and press play by hand", serial)
         log.info("%s plays %s", serial, scenario or "its running config")
         if not adb.game_running(serial, config.GAME_PACKAGE):
             time.sleep(3)
@@ -465,13 +470,14 @@ def make_handler(coordinator: Coordinator):
     return Handler
 
 
-def start(active: str | None = None) -> Coordinator:
-    """Attaches the devices, then runs the watchdog and the event server in background threads."""
+def start(active: str | None = None, rooms: tuple[str, ...] | None = None) -> Coordinator:
+    """Attaches the devices, then runs the watchdog and the event server in background threads.
+    In single mode `rooms` limits the run to the rooms that are ready."""
     global DEVICES
     config.reload()
     if not config.BRIDGE_TOKEN:
         raise SystemExit("No bridge token: run main.py (or the app) so first-run setup can create one.")
-    DEVICES = config.DEVICES
+    DEVICES = tuple(rooms) if rooms and config.MODE == "single" else config.DEVICES
     set_file_logging(config.WRITE_LOGS)
 
     if config.MODE == "single":

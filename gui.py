@@ -130,17 +130,6 @@ class PanelPage(ui.Page):
                                      ("⧉", "Emulators", lambda: app.show(app.emulators_page))):
             ui.icon_button(toolbar, symbol, tip, command).pack(side="right", padx=(6, 0))
 
-        bridge = tk.Frame(self, bg=ui.CARD, highlightbackground=ui.BORDER, highlightthickness=1)
-        bridge.pack(fill="x", pady=(10, 0))
-        line = tk.Frame(bridge, bg=ui.CARD)
-        line.pack(anchor="center", pady=6)
-        tk.Label(line, text="Bridge", bg=ui.CARD, fg=ui.GREEN_DARK, font=(ui.FONT, 10, "bold")).pack(
-            side="left", padx=(0, 6))
-        self.port = tk.StringVar()
-        self.token = tk.StringVar()
-        for label, var, secret in (("Address", tk.StringVar(value="127.0.0.1"), False), ("Port", self.port, False),
-                                   ("Token", self.token, True)):
-            self._bridge_part(line, label, var, secret)
         self.boxes: dict[str, ttk.Combobox] = {}
         self.names: dict[str, list[str]] = {}
         self.tiles: dict[str, RoomTile] = {}
@@ -178,34 +167,6 @@ class PanelPage(ui.Page):
         self.device_info: dict[str, str] = {}
         self.room_stats: dict[str, dict] = {}
 
-    def _bridge_part(self, parent: tk.Misc, label: str, var: tk.StringVar, secret: bool) -> None:
-        part = tk.Frame(parent, bg=ui.CARD)
-        part.pack(side="left", padx=8)
-        tk.Label(part, text=label, bg=ui.CARD, fg=ui.MUTED, font=(ui.FONT, 9)).pack(side="left")
-        shown = var
-        if secret:
-            shown = tk.StringVar()
-            visible = [False]
-
-            def refresh(*_) -> None:
-                shown.set(var.get() if visible[0] else "•" * min(len(var.get()), 16))
-
-            def toggle(state: bool) -> None:
-                visible[0] = state
-                refresh()
-
-            var.trace_add("write", refresh)
-        tk.Label(part, textvariable=shown, bg=ui.CARD, fg=ui.TEXT, font=(ui.FONT, 9, "bold"),
-                 anchor="w").pack(side="left", padx=(5, 3))
-        if secret:
-            ui.eye(part, toggle).pack(side="left", padx=(0, 3))
-
-        def copy() -> None:
-            part.clipboard_clear()
-            part.clipboard_append(var.get())
-
-        ttk.Button(part, text="Copy", width=5, command=copy).pack(side="left")
-
     def _points_per_clear(self, parent: tk.Misc) -> tk.Frame:
         box = tk.Frame(parent, bg=ui.CARD)
         tk.Label(box, text="per clear", bg=ui.CARD, fg=ui.MUTED, font=(ui.FONT, 9)).pack(side="left")
@@ -233,8 +194,6 @@ class PanelPage(ui.Page):
 
     def shown(self) -> None:
         self.per_clear.set(str(config.POINTS_PER_CLEAR))
-        self.port.set(str(config.BRIDGE_PORT))
-        self.token.set(config.BRIDGE_TOKEN)
         single = config.MODE == "single"
         self.totals_title.configure(text="Stats")
         if single:
@@ -308,6 +267,9 @@ class PanelPage(ui.Page):
         for serial, tile in self.tiles.items():
             if not running:
                 tile.state("STOPPED", ui.GREY, "")
+                continue
+            if single and serial not in coordinator.rooms:
+                tile.state("NOT STARTED", ui.GREY, "not ready at Start: see the log")
                 continue
             quiet = now - coordinator.last_clear[serial] if single else 0
             if serial in coordinator.restarting:
@@ -394,19 +356,38 @@ def figure(parent: tk.Misc, caption: str, column: int) -> tk.Label:
     return value
 
 
+def unlink_button(parent: tk.Misc, command) -> tk.Frame:
+    """A blue box with a broken chain and the word Disconnect."""
+    box = tk.Frame(parent, bg=ui.BLUE, cursor="hand2", padx=4)
+    canvas = tk.Canvas(box, width=20, height=18, bg=ui.BLUE, highlightthickness=0)
+    canvas.create_line(3, 13, 6, 10, 9, 10, 10, 11, 10, 13, 7, 16, 5, 16, 3, 14, 3, 13, fill="white", width=2)
+    canvas.create_line(18, 5, 15, 8, 12, 8, 11, 7, 11, 5, 14, 2, 16, 2, 18, 4, 18, 5, fill="white", width=2)
+    canvas.create_line(8, 3, 9, 6, fill="white", width=2)
+    canvas.create_line(13, 15, 12, 12, fill="white", width=2)
+    canvas.pack(side="left")
+    label = tk.Label(box, text="Disconnect", bg=ui.BLUE, fg="white", font=(ui.FONT, 8, "bold"))
+    label.pack(side="left", padx=(2, 2))
+    for widget in (box, canvas, label):
+        widget.bind("<Button-1>", lambda _: command())
+    ui.Tooltip(box, "Disconnect this emulator: it is taken out of the rooms. Add it back from ⧉.")
+    return box
+
+
 class RoomTile(tk.Frame):
     """One room: its state, its numbers in single mode, the config it plays and its restart button."""
 
     def __init__(self, parent: tk.Misc, panel: PanelPage, serial: str, single: bool) -> None:
         super().__init__(parent, bg=ui.CARD, highlightbackground=ui.BORDER, highlightthickness=1, padx=12, pady=10)
-        head = tk.Frame(self, bg=ui.CARD)
-        head.pack(fill="x")
-        tk.Label(head, text=config.DEVICE_NAMES.get(serial, serial), bg=ui.CARD, fg=ui.TEXT,
-                 font=(ui.FONT, 12, "bold")).pack(side="left")
-        self.pill = tk.Label(head, text="STOPPED", bg=ui.GREY, fg="white", font=(ui.FONT, 8, "bold"), padx=8)
-        self.pill.pack(side="right")
+        tk.Label(self, text=config.DEVICE_NAMES.get(serial, serial), bg=ui.CARD, fg=ui.TEXT,
+                 font=(ui.FONT, 12, "bold"), anchor="w").pack(fill="x")
+        state = tk.Frame(self, bg=ui.CARD)
+        state.pack(fill="x", pady=(4, 0))
+        unlink_button(state, lambda: panel.app.unlink(serial)).pack(side="left", padx=(0, 6))
+        self.pill = tk.Label(state, text="STOPPED", bg=ui.GREY, fg="white", font=(ui.FONT, 8, "bold"), padx=8,
+                             pady=1)
+        self.pill.pack(side="left")
         self.detail = tk.Label(self, bg=ui.CARD, fg=ui.TEXT, font=(ui.FONT, 9), anchor="w")
-        self.detail.pack(fill="x", pady=(2, 0))
+        self.detail.pack(fill="x", pady=(4, 0))
         self.figures: dict[str, tk.Label] = {}
         if single:
             grid = tk.Frame(self, bg=ui.CARD)
@@ -558,7 +539,7 @@ class App:
             self.show(self.welcome)
             return
         self.show(self.panel)
-        if autostart and settings.load()["start_automatically"] and self._rooms_ready():
+        if autostart and config.MODE == "dual" and settings.load()["start_automatically"] and self._rooms_ready():
             self.start()
 
     def _rooms_ready(self) -> bool:
@@ -723,12 +704,18 @@ class App:
 
         def job():
             devices = config.DEVICES
-            problems = [problem for problem in map(handoff.check_device, devices) if problem]
-            if problems:
-                return RuntimeError("; ".join(problems))
+            problems = {serial: problem for serial in devices if (problem := handoff.check_device(serial))}
+            if config.MODE == "single":
+                for problem in problems.values():
+                    logging.getLogger("coordinator").error("not started: %s", problem)
+                devices = tuple(serial for serial in devices if serial not in problems)
+                if not devices:
+                    return RuntimeError("no room is ready")
+            elif problems:
+                return RuntimeError("; ".join(problems.values()))
             for attempt in range(10):
                 try:
-                    coordinator = handoff.start()
+                    coordinator = handoff.start(rooms=devices)
                     break
                 except OSError:
                     if attempt == 9:
@@ -767,6 +754,29 @@ class App:
                 then()
 
         self.run_job(lambda: handoff.stop(coordinator), done)
+
+    def unlink(self, serial: str) -> None:
+        name = config.DEVICE_NAMES.get(serial, serial)
+        if not messagebox.askyesno(app_title(), f"Disconnect {name}?\n\nIt is taken out of the rooms and its clicker "
+                                                f"is no longer linked to this computer. Add it back from ⧉."):
+            return
+        data = settings.load()
+        if config.MODE == "single":
+            data["single_devices"] = [s for s in data["single_devices"] if s != serial]
+        else:
+            for key in ("device_a", "device_b"):
+                if data[key] == serial:
+                    data[key] = data[f"{key}_name"] = ""
+        settings.save(data)
+        port = config.BRIDGE_PORT
+        self.run_job(lambda: adb.unlink(serial, port), lambda _: None)
+        logging.getLogger("coordinator").info("%s disconnected from the panel", serial)
+        config.reload()
+        self.panel.device_info.clear()
+        self.panel.room_stats.clear()
+        self.panel.shown()
+        if self.coordinator:
+            self.stop(then=self.start if self._rooms_ready() else None)
 
     def pair_changed(self) -> None:
         config.reload()
