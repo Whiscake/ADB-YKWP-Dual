@@ -662,7 +662,10 @@ class App:
     def _poll(self) -> None:
         while not self.jobs.empty():
             done, result = self.jobs.get_nowait()
-            done(result)
+            try:
+                done(result)
+            except Exception as exc:  # one failing page must not stop every other job
+                logging.getLogger("coordinator").error("panel error: %s", exc, exc_info=True)
         while not self.events.empty():
             level, line = self.events.get_nowait()
             if level is None:

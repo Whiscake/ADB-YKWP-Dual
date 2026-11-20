@@ -1,5 +1,6 @@
 """Clicker page: turns one of your clicker configs into a dual-ready copy and installs it on both emulators."""
 import tempfile
+import time
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, ttk
@@ -48,6 +49,7 @@ class ConfigPage(ui.Page):
         super().__init__(app)
         self.source: Path | None = None
         self.scenarios: list[configs.Scenario] = []
+        self.loaded_from = -1
         self.folder = tempfile.TemporaryDirectory()
         self.busy = False
         about(self)
@@ -115,6 +117,9 @@ class ConfigPage(ui.Page):
 
     def _load_source(self) -> None:
         index = self.where.current()
+        if index == self.loaded_from and self.scenarios and index < len(self._devices()):
+            return
+        self.loaded_from = index
         devices = self._devices()
         if index >= len(devices):
             path = filedialog.askopenfilename(parent=self, title="Clicker backup",
@@ -127,8 +132,11 @@ class ConfigPage(ui.Page):
         adb = self.app.adb
         self._work(f"Reading the configs in the clicker on {name}...",
                    lambda: emulators.export_scenarios(adb, serial, local),
-                   lambda ok: self._load(local) if ok else self.status.set(
-                       f"Could not read the clicker on {name}. Is it installed and opened once?"))
+                   lambda ok: self._load(local) if ok else self._read_failed(name))
+
+    def _read_failed(self, name: str) -> None:
+        self.loaded_from = -1
+        self.status.set(f"Could not read the clicker on {name}. Is it installed and opened once?")
 
     def _load(self, path: Path) -> None:
         self.source = path
@@ -171,19 +179,7 @@ class ConfigPage(ui.Page):
         self.send.state(["!disabled"] if not self.busy and not missing else ["disabled"])
 
     def _work(self, message: str, job, done) -> None:
-        self.busy = True
-        self.status.set(message)
-        self._update()
-
-        def finish(result) -> None:
-            self.busy = False
-            if isinstance(result, Exception):
-                self.status.set(f"Error: {result}")
-            else:
-                done(result)
-            self._update()
-
-        self.app.run_job(job, finish)
+        _run_work(self, message, job, done)
 
     def _send(self) -> None:
         scenario = self._chosen()
@@ -211,6 +207,35 @@ class ConfigPage(ui.Page):
             f"Done on {', '.join(sent)}. Press Start on the panel: it opens the game and plays "
             f"'{scenario.name} (dual ...)' by itself." if sent else
             "Nothing was sent: check that the clicker is installed on both emulators."))
+
+
+def _run_work(page, message: str, job, done) -> None:
+    """Runs `job` with Send greyed out and the seconds it has taken shown, then always gives Send back, also on an
+    error, which is shown instead of leaving the page stuck."""
+    page.busy = True
+    started = time.time()
+    page.status.set(message)
+    page._update()
+
+    def elapsed() -> None:
+        if page.busy:
+            page.status.set(f"{message} {time.time() - started:.0f}s")
+            page.after(1000, elapsed)
+
+    def finish(result) -> None:
+        page.busy = False
+        try:
+            if isinstance(result, BaseException):
+                page.status.set(f"Error: {result}")
+            else:
+                done(result)
+        except Exception as exc:
+            page.status.set(f"Error: {exc}")
+        finally:
+            page._update()
+
+    page.after(1000, elapsed)
+    page.app.run_job(job, finish)
 
 
 def _safe(text: str) -> str:
@@ -356,19 +381,7 @@ class SoloConfigPage(ui.Page):
         self.send.state(["!disabled"] if ready and not self.busy else ["disabled"])
 
     def _work(self, message: str, job, done) -> None:
-        self.busy = True
-        self.status.set(message)
-        self._update()
-
-        def finish(result) -> None:
-            self.busy = False
-            if isinstance(result, Exception):
-                self.status.set(f"Error: {result}")
-            else:
-                done(result)
-            self._update()
-
-        self.app.run_job(job, finish)
+        _run_work(self, message, job, done)
 
     def _send(self) -> None:
         names = dict(self.rooms)

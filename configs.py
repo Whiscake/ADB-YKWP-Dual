@@ -18,11 +18,15 @@ def read(path: Path) -> list[Scenario]:
     with zipfile.ZipFile(path) as archive:
         scenarios = []
         for entry in archive.namelist():
-            if entry.endswith(".json"):
+            if not entry.endswith(".json"):
+                continue
+            try:
                 data = json.loads(archive.read(entry))["scenario"]
                 events = sorted(data["events"], key=lambda e: e["event"].get("priority", 0))
-                scenarios.append(Scenario(entry.split("/", 1)[0], data["scenario"]["name"],
-                                          [(e["event"]["id"], e["event"]["name"]) for e in events]))
+                scenarios.append(Scenario(entry.split("/", 1)[0], data["scenario"]["name"] or "",
+                                          [(e["event"]["id"], e["event"]["name"] or "") for e in events]))
+            except (KeyError, TypeError, ValueError):
+                continue  # not a scenario (another file in the backup), or one this program can't read
         return sorted(scenarios, key=lambda s: s.name.lower())
 
 
