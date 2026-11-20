@@ -44,7 +44,6 @@ DEFAULTS = {
     "ask_mode": True,
     "single_devices": [],
     "single_names": {},
-    "start_automatically": True,
     "write_logs": True,
     "token": "",
     "port": 8765,

@@ -123,7 +123,6 @@ file to start over with a new token.
 | `stats_interval_seconds` | 5 | How often the stats refresh |
 | `stats_clear_sample_size` | 100 | How many recent clears the clear times are computed from |
 | `stats_uptime_window_hours` | 24 | How far back uptime and restarts are counted |
-| `start_automatically` | true | Start as soon as the program opens |
 | `on_close` | `ask` | What closing the window does: `ask`, `tray` (keep running next to the clock) or `exit` |
 | `write_logs` | true | Write the log files. The stats are computed from them |
 | `tutorial_done` | false | Set once the tutorial is finished or skipped |

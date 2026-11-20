@@ -62,9 +62,6 @@ GROUPS = [
         ("ask_mode", "Ask the mode when the program opens",
          "Ask every time whether to play in dual (two rooms taking turns) or single (each room plays on its own). "
          "Off, it opens in the last mode used; the ⇄ button on the panel changes it."),
-        ("start_automatically", "Start when the program opens",
-         "Dual mode only: start playing right away when you open the program. Single mode always waits for "
-         "Start."),
         ("on_close", "Closing the window",
          "What the X of the window does: ask every time, keep the program running next to the clock "
          "(notification area), or close it completely."),

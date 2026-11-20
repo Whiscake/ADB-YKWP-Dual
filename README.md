@@ -135,8 +135,7 @@ The stats are kept per instance and never mixed.
 
 ## The panel
 
-- **▶ Start / ■ Stop** starts and stops everything. In dual mode, with *Start when the program opens* on, it starts
-  by itself; single mode always waits for Start.
+- **▶ Start / ■ Stop** starts and stops everything. Nothing starts by itself when the program opens: press Start.
   Start does the rest on its own: in each instance it opens the chosen config in the clicker and presses play (or just
   presses play if it is already open), checks that the clicker really started (and tries once more if not), opens the
   game if it is closed, then coordinates the two. If an instance has no clicker, its accessibility service is off, or

@@ -549,7 +549,7 @@ class App:
         if settings.load()["ask_mode"]:
             self.show(self.mode_page)
         else:
-            self.open_mode(autostart=True)
+            self.open_mode()
 
     def _tutorial_key(self) -> str:
         return "single_tutorial_done" if config.MODE == "single" else "tutorial_done"
@@ -564,9 +564,10 @@ class App:
             self.panel.names.clear()
             self.panel.device_info.clear()
             self.panel.room_stats.clear()
-        self.open_mode(autostart=not self.opened)
+        self.open_mode()
 
-    def open_mode(self, autostart: bool) -> None:
+    def open_mode(self) -> None:
+        """Shows the panel of the chosen mode. Playing never starts by itself: only Start starts it."""
         config.reload()
         self.opened = True
         self.root.title(app_title())
@@ -574,8 +575,6 @@ class App:
             self.show(self.welcome)
             return
         self.show(self.panel)
-        if autostart and config.MODE == "dual" and settings.load()["start_automatically"] and self._rooms_ready():
-            self.start()
 
     def _rooms_ready(self) -> bool:
         return bool(config.DEVICES) if config.MODE == "single" else bool(config.DEVICE_A and config.DEVICE_B)
