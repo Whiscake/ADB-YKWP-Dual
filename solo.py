@@ -49,7 +49,7 @@ class Solo:
         playing = len(self.rooms) - len(self.restarting)
         return f"OK - {playing} room{'' if playing == 1 else 's'} playing"
 
-    def on_stage_clear(self, serial: str) -> str:
+    def on_stage_clear(self, serial: str, received: float | None = None) -> str:
         with self._lock:
             now = time.time()
             if serial in self.restarting:

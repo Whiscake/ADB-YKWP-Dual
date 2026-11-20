@@ -74,16 +74,20 @@ screen you are on, and the green numbered circles match its steps.
 
 ### Step 2: Clicker config
 
-You make one normal config that plays the stages. The program then makes a copy for each instance with the commands it
-needs, and installs it.
+**What is a config?** A config is one of the scenarios you made in Smart AutoClicker: the one you already use to play
+the stages. Use it as it is, with its normal image conditions. Nothing in it has to be made for ADB or for this
+program, and you never type the bridge address, port or token in it: the program makes a copy for each instance,
+adds the commands it needs to the two events you pick, and installs it. Your config is not changed.
 
 1. Choose where your config is: in the clicker of one of the instances, or a backup `.zip` on this computer.
 2. Choose the config, then two of its events:
-   - **Stage clear event:** the event that presses OK on the stage clear screen. It gets a `stage-clear` command as its
-     last action, so the other instance starts as soon as this one is done.
-   - **Login screen event:** the event that sees the game's login (title) screen. Its own clicks are removed: it only
-     reports `login-screen` every 2 seconds, and the program taps login when it is that instance's turn.
-3. Press **Send to both emulators**. Each clicker gets a copy called *(your config) (dual (instance))*.
+   - **Stage clear event:** the normal event of your config that presses OK on the stage clear screen. In the copy it
+     gets a `stage-clear` command as its last action, so the other instance starts as soon as this one is done.
+   - **Login screen event:** the normal event of your config that sees the login screen with the **3 profiles**, not
+     the title screen. In the copy its clicks are removed: it only reports `login-screen` every 2 seconds, and the
+     program taps login when it is that instance's turn.
+3. Press **Send to both emulators**. Each clicker gets a copy called *(your config) (dual (instance))*. The copies
+   are not listed among the configs to choose from, so you always start from your own.
 4. Back on the panel, the menu next to each instance shows the config it plays: Send picks the new copy for you. You can
    change it there any time, or leave **Config already running** to keep the one open in the clicker.
 
@@ -114,8 +118,8 @@ Setting it up follows the same tutorial:
    instance.
 3. **⚙ Settings:** the same settings as in dual mode.
 
-On the panel each instance has its own box: its state (playing, stuck, restarting), its clears, points, average
-clear time and points per hour, its own *points per clear* (instances can give different points), its config menu
+On the panel each instance has its own box: its state (playing, stuck, restarting), its stats (the same ones dual
+mode shows for the pair, see *Stats* below), its own *points per clear* (instances can give different points), its config menu
 and a **⟳** button that restarts it right away. While playing, for each
 instance on its own:
 
@@ -131,19 +135,30 @@ The stats are kept per instance and never mixed.
 
 ## The panel
 
-- **▶ Start / ■ Stop** starts and stops everything. With *Start when the program opens* on, it starts by itself.
+- **▶ Start / ■ Stop** starts and stops everything. Nothing starts by itself when the program opens: press Start.
   Start does the rest on its own: in each instance it opens the chosen config in the clicker and presses play (or just
-  presses play if it is already open), opens the game if it is closed, then coordinates the two. If an instance has
-  no clicker, its accessibility service is off, or it has no config chosen and none running, nothing starts and the
-  log says why.
+  presses play if it is already open), checks that the clicker really started (and tries once more if not), opens the
+  game if it is closed, then coordinates the two. If an instance has no clicker, its accessibility service is off, or
+  it has no config chosen and none running, the log says why: in dual mode nothing starts, in single mode only that
+  instance is left out.
 - The square buttons open the **⧉ emulators**, the **✎ clicker config**, the **⚙ settings** and the **? tutorial**.
-- **Bridge:** address, port and token (only needed if you set up a clicker by hand; the token shows as dots, click the
-  eye to see it, **Copy** always copies it), and for each instance: whether it is playing, waiting or restarting, the
-  last message its clicker sent, how long the emulator has been on, how many times it was restarted in the uptime
-  window, and the menu with the config it plays. The menu reads the configs saved in that clicker.
-- **Stats:** clears this run, clear times, uptime (time since Start, with the time lost while stuck), points per hour
-  and per day, and the forecast. The points per battle can be changed right next to *Points*.
-- **Log:** what the program is doing. The same lines are saved in the log files.
+- **One box per instance:** its state (playing, waiting, stuck, restarting), the last message its clicker sent, how
+  long the emulator has been on, how many times it was restarted in the uptime window, and the menu with the config it
+  plays (it reads the configs saved in that clicker). The blue **Disconnect** box takes the instance out of the rooms
+  and unlinks its clicker; add it back from ⧉.
+- The bridge address, port and token are in ⚙ Settings, at the bottom. You don't need them: Send and Start set them in
+  the clicker for you. They are only for a clicker set up by hand.
+- Next to Start: how long the panel has been open and how long it has been running since Start.
+- **Stats** (the same in both modes: for the pair in dual mode, for each instance in single mode): clears and points
+  since Start, points per hour and per 24 hours, average clear time with the fastest and slowest under it, how long
+  ago the last clear was, uptime (the time not stuck since Start, at most the uptime window) and downtime, and the
+  forecast when a target date is set. The points per battle can be changed right next to the stats.
+- **Log:** what the program is doing. The same lines are saved in the log files. In the bottom right corner, in dual
+  mode, the login delay: the time from a stage clear reaching the program to the login tap on the other instance
+  (last one and average).
+- **Fast login tap:** at Start the program finds each instance's touch screen and keeps an adb shell open on it, so the
+  login tap is a few milliseconds instead of the quarter of a second to a second of `input tap`. If the touch screen
+  can't be written directly (the log says so at Start), it uses `input tap` as before.
 - While an instance restarts, the band at the top turns blue and the status shows each step; while the program waits
   for the instance to answer on adb again, it shows the time left.
 

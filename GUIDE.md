@@ -106,7 +106,7 @@ file to start over with a new token.
 | `tap_jitter_pixels` | 8 | Random offset added to each tap. 0 turns it off |
 | `ntfy_url` | blank | Your ntfy.sh topic URL for phone alerts. Blank means no alerts |
 | `min_stage_seconds` | 18 | Clears sooner than this after an instance starts playing are ignored |
-| `stage_clear_tap_delay_seconds` | 0.2 | Pause between a clear and the login tap |
+| `stage_clear_tap_delay_seconds` | 0 | Pause between a clear and the login tap (0 taps at once) |
 | `stuck_after_seconds` | 40 | No clear for this long: shown as stuck |
 | `alert_after_seconds` | 240 | No clear for this long: alert sent |
 | `alert_repeat_seconds` | 300 | Minimum gap between repeated alerts |
@@ -123,7 +123,6 @@ file to start over with a new token.
 | `stats_interval_seconds` | 5 | How often the stats refresh |
 | `stats_clear_sample_size` | 100 | How many recent clears the clear times are computed from |
 | `stats_uptime_window_hours` | 24 | How far back uptime and restarts are counted |
-| `start_automatically` | true | Start as soon as the program opens |
 | `on_close` | `ask` | What closing the window does: `ask`, `tray` (keep running next to the clock) or `exit` |
 | `write_logs` | true | Write the log files. The stats are computed from them |
 | `tutorial_done` | false | Set once the tutorial is finished or skipped |

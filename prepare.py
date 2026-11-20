@@ -19,14 +19,30 @@ SINGLE_EVENT_TIP = ("The event that runs once at the end of every battle, like t
                     "playing. When it stops, the program closes and opens the game, then restarts the emulator.")
 
 
+ABOUT_CONFIG = ("A config is one of the scenarios you made in Smart AutoClicker: the one you already use to play "
+                "the stages. Use it as it is, with its normal image conditions; nothing in it has to be made for ADB "
+                "or for this program. The program makes a copy, adds the commands it needs to the events you pick "
+                "below, and sends it to the emulator. Your config is not changed, and you never type the bridge "
+                "address, port or token in a config.")
+
+
+def about(page: ui.Page) -> None:
+    card = tk.Frame(page, bg=ui.GREEN_LIGHT, padx=12, pady=8)
+    card.pack(fill="x", pady=(0, 10))
+    tk.Label(card, text="What is a config?", bg=ui.GREEN_LIGHT, fg=ui.GREEN_DARK, font=(ui.FONT, 10, "bold"),
+             anchor="w").pack(fill="x")
+    text = tk.Label(card, text=ABOUT_CONFIG, bg=ui.GREEN_LIGHT, fg=ui.TEXT, font=(ui.FONT, 9), anchor="w",
+                    justify="left")
+    text.pack(fill="x")
+    text.bind("<Configure>", lambda e: text.configure(wraplength=max(200, e.width - 4)))
+
+
 class ConfigPage(ui.Page):
     title = "Clicker config"
-    help = ("1  Choose where your clicker config is: in one of the emulators, or a backup file on this PC.\n"
-            "2  Choose the config, then the event that presses OK after a stage clear and the one that sees "
-            "the login screen.\n"
-            "3  Press Send: both emulators get a ready copy called '(dual ...)'.\n"
-            "4  On the panel, the menu next to each room is the config that room plays at Start: Send picks the new "
-            "copy for you, and you can change it there any time.")
+    help = ("1  Choose where your config is: in the clicker of one of the emulators, or a backup file on this PC.\n"
+            "2  Choose the config, then two of its events: the one that presses OK on the stage clear screen, and "
+            "the one that sees the login screen with the 3 profiles (not the title screen).\n"
+            "3  Press Send: both emulators get a ready copy called '(dual ...)', and the panel picks it.")
 
     def __init__(self, app) -> None:
         super().__init__(app)
@@ -34,6 +50,7 @@ class ConfigPage(ui.Page):
         self.scenarios: list[configs.Scenario] = []
         self.folder = tempfile.TemporaryDirectory()
         self.busy = False
+        about(self)
 
         body = tk.Frame(self, bg=ui.BACKGROUND)
         body.pack(fill="x")
@@ -43,16 +60,19 @@ class ConfigPage(ui.Page):
                                "Pick an emulator to read the configs saved in its clicker, or pick a backup "
                                ".zip exported from the clicker.")
         self.where.bind("<<ComboboxSelected>>", lambda _: self._load_source())
-        self.scenario = self._row(body, 1, 2, "Config", "The config you normally use to play the stages.")
+        self.scenario = self._row(body, 1, 2, "Config",
+                                  "The config you normally use to play the stages, as it is. Copies made by this "
+                                  "program, called '(dual ...)' or '(solo ...)', are not listed.")
         self.scenario.bind("<<ComboboxSelected>>", lambda _: self._scenario_changed())
         self.clear_event = self._row(body, 2, None, "Stage clear event",
-                                     "The event that presses OK on the stage clear screen. When it runs, the "
-                                     "clicker tells this program the stage is done, so the other emulator "
+                                     "The normal event of your config that presses OK on the stage clear screen. "
+                                     "The copy also tells this program the stage is done, so the other emulator "
                                      "starts playing.")
         self.login_event = self._row(body, 3, None, "Login screen event",
-                                     "The event that sees the game's login (title) screen. Its own clicks are "
-                                     "removed: it only tells this program the emulator is waiting, and this "
-                                     "program taps login when it is that emulator's turn.")
+                                     "The normal event of your config that sees the login screen with the 3 "
+                                     "profiles, not the title screen. In the copy its clicks are removed: it only "
+                                     "tells this program the emulator is waiting, and this program taps login when "
+                                     "it is that emulator's turn.")
         for combo in (self.clear_event, self.login_event):
             combo.bind("<<ComboboxSelected>>", lambda _: self._update())
 
@@ -110,7 +130,7 @@ class ConfigPage(ui.Page):
 
     def _load(self, path: Path) -> None:
         self.source = path
-        self.scenarios = configs.read(path)
+        self.scenarios = [s for s in configs.read(path) if not _copy(s.name)]
         self.scenario.configure(values=[s.name for s in self.scenarios])
         self.scenario.set(self.scenarios[0].name if self.scenarios else "")
         self.status.set(f"{len(self.scenarios)} config(s) found." if self.scenarios else "No config found.")
@@ -189,8 +209,8 @@ class SoloConfigPage(ui.Page):
     """Single mode: every room keeps its own config, so each one is read from and sent back to its own clicker."""
     title = "Clicker config"
     help = ("1  Press Read configs: the program reads the configs saved in the clicker of every room.\n"
-            "2  For each room choose its config and the event that runs once at the end of every battle, like the "
-            "one that presses OK on the defeat or the stage clear screen.\n"
+            "2  For each room choose its normal config and the event that runs once at the end of every battle, "
+            "like the one that presses OK on the defeat or the stage clear screen.\n"
             "3  Press Send: each room gets a copy of its own config called '(solo ...)', and the panel picks it "
             "for that room.")
 
@@ -201,6 +221,7 @@ class SoloConfigPage(ui.Page):
         self.rooms: list[tuple[str, str]] = []
         self.found: dict[str, tuple[Path, list[configs.Scenario]]] = {}
         self.widgets: dict[str, tuple[ttk.Combobox, ttk.Combobox, tk.StringVar]] = {}
+        about(self)
 
         top = tk.Frame(self, bg=ui.BACKGROUND)
         top.pack(fill="x")

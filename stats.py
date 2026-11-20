@@ -62,8 +62,10 @@ def compute_stats() -> dict:
     downtime = timedelta()
     room_downtime: dict[str, timedelta] = {}
     room_clears: dict[str, int] = {}
+    room_last: dict[str, datetime] = {}
     session_clears = 0
     last_clear = None
+    run_start = None
     restarts: dict[str, int] = {}
 
     def room(text: str) -> str:
@@ -83,8 +85,11 @@ def compute_stats() -> dict:
             stuck_open.clear()
             room_clears.clear()
             room_downtime.clear()
+            room_last.clear()
+            downtime = timedelta()
             session_clears = 0
             last_clear = None
+            run_start = ts
             continue
 
         if msg.startswith(CLEAR_MARKER):
@@ -95,6 +100,7 @@ def compute_stats() -> dict:
             stuck_seen.discard(key)
             session_clears += 1
             room_clears[key] = room_clears.get(key, 0) + 1
+            room_last[key] = ts
             last_clear = ts
             continue
 
@@ -117,39 +123,49 @@ def compute_stats() -> dict:
         downtime += lost
         room_downtime[key] = room_downtime.get(key, timedelta()) + lost
 
-    recent = {key: values[-config.STATS_CLEAR_SAMPLE_SIZE:] for key, values in durations.items() if values}
-    every = [value for values in recent.values() for value in values]
+    # uptime covers the run since Start, at most the uptime window
     window_seconds = config.STATS_UPTIME_WINDOW_HOURS * 3600
-    downtime_seconds = min(downtime.total_seconds(), window_seconds * max(1, len(config.DEVICES)))
-    avg_clear = sum(every) / len(every) if every else None
-    points_per_hour = sum(config.POINTS_PER_CLEAR / (sum(v) / len(v)) * 3600 for v in recent.values())         if recent else None
-
-    points_to_target = None
+    if run_start is not None:
+        window_seconds = max(1.0, min(window_seconds, (now - run_start).total_seconds()))
     target = _parse_target(config.FORECAST_TARGET_DATETIME) if config.FORECAST_TARGET_DATETIME else None
-    if target and points_per_hour:
-        points_to_target = points_per_hour * max(0.0, (target - now).total_seconds() / 3600)
+    hours_to_target = max(0.0, (target - now).total_seconds() / 3600) if target else None
 
+    def group(key: str, points: float) -> dict:
+        """The same numbers for the pair in dual mode (key "") and for each room in single mode."""
+        values = durations.get(key, [])[-config.STATS_CLEAR_SAMPLE_SIZE:]
+        avg = sum(values) / len(values) if values else None
+        per_hour = points / avg * 3600 if avg else None
+        lost = min(room_downtime.get(key, timedelta()).total_seconds(), window_seconds)
+        return {
+            "clears": room_clears.get(key, 0),
+            "points": room_clears.get(key, 0) * points,
+            "sample_size": len(values),
+            "avg_clear": avg,
+            "fastest_clear": min(values) if values else None,
+            "slowest_clear": max(values) if values else None,
+            "last_clear": room_last.get(key),
+            "points_per_hour": per_hour,
+            "points_per_day": per_hour * 24 if per_hour else None,
+            "points_to_target": per_hour * hours_to_target if per_hour and hours_to_target is not None else None,
+            "downtime_seconds": lost,
+            "uptime_pct": (window_seconds - lost) / window_seconds * 100,
+        }
+
+    keys = [serial for serial in config.DEVICES if serial] if single else [""]
+    groups = {key: group(key, config.ROOM_POINTS.get(key, config.POINTS_PER_CLEAR) if key
+                         else config.POINTS_PER_CLEAR) for key in keys}
+    pair = groups.get("") or group("", config.POINTS_PER_CLEAR)
     return {
-        "sample_size": len(every),
-        "avg_clear": avg_clear,
-        "fastest_clear": min(every) if every else None,
-        "slowest_clear": max(every) if every else None,
-        "uptime_pct": max(0.0, (window_seconds - min(downtime_seconds, window_seconds)) / window_seconds * 100),
-        "downtime_seconds": downtime_seconds,
+        **pair,
         "session_clears": session_clears,
         "last_clear": last_clear,
-        "points_per_hour": points_per_hour,
-        "points_per_day": points_per_hour * 24 if points_per_hour else None,
-        "points_to_target": points_to_target,
+        "uptime_pct": pair["uptime_pct"] if not single else
+        sum(g["uptime_pct"] for g in groups.values()) / max(1, len(groups)),
+        "downtime_seconds": min(downtime.total_seconds(), window_seconds * max(1, len(keys))),
         "target": target,
         "restarts": restarts,
-        "rooms": {key: {
-            "clears": room_clears.get(key, 0),
-            "avg_clear": sum(recent[key]) / len(recent[key]) if key in recent else None,
-            "points_per_hour": config.POINTS_PER_CLEAR / (sum(recent[key]) / len(recent[key])) * 3600
-            if key in recent else None,
-            "downtime_seconds": room_downtime.get(key, timedelta()).total_seconds(),
-        } for key in set(room_clears) | set(room_downtime) if key},
+        "run_start": run_start,
+        "groups": groups,
     }
 
 

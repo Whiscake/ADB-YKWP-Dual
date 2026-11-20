@@ -1,7 +1,10 @@
+import base64
 import random
 import re
 import shlex
+import struct
 import subprocess
+import threading
 import time
 
 import config
@@ -88,12 +91,120 @@ def scaled(serial: str, x: int, y: int) -> tuple[int, int]:
 
 
 def tap(serial: str, x: int, y: int) -> None:
+    """Taps through the touch screen when `prepare_touch` found it (a few milliseconds), else with `input tap`
+    (a quarter of a second to a second: it starts a Java program on the device every time)."""
     jitter = config.TAP_JITTER_PIXELS
     if jitter:
         x += random.randint(-jitter, jitter)
         y += random.randint(-jitter, jitter)
+    if _touch_tap(serial, x, y):
+        return
     _device_call(serial, "shell", "input", "tap", str(x), str(y))
     time.sleep(TAP_SETTLE_SECONDS)
+
+
+class _Touch:
+    """The instance's touch screen and an adb shell kept open on it, so a tap is one write to the screen device."""
+
+    def __init__(self, node: str, scale_x: float, scale_y: float, max_x: int, max_y: int, event_format: str,
+                 button: bool, pressure: bool) -> None:
+        self.node, self.scale_x, self.scale_y, self.max_x, self.max_y = node, scale_x, scale_y, max_x, max_y
+        self.event_format, self.button, self.pressure = event_format, button, pressure
+        self.shell: subprocess.Popen | None = None
+        self.lock = threading.Lock()
+
+    def events(self, *items: tuple[int, int, int]) -> str:
+        return base64.b64encode(b"".join(struct.pack(self.event_format, 0, 0, *item) for item in items)).decode()
+
+    def command(self, x: int, y: int) -> str:
+        raw_x = min(self.max_x, max(0, int(x * self.scale_x)))
+        raw_y = min(self.max_y, max(0, int(y * self.scale_y)))
+        down = [(3, 0x39, random.randint(1, 60000))] + ([(1, 0x14a, 1)] if self.button else [])
+        down += [(3, 0x35, raw_x), (3, 0x36, raw_y)] + ([(3, 0x3a, 1)] if self.pressure else []) + [(0, 0, 0)]
+        up = [(3, 0x39, -1)] + ([(1, 0x14a, 0)] if self.button else []) + [(0, 0, 0)]
+        return (f"echo {self.events(*down)}|base64 -d >{self.node};"
+                f"echo {self.events(*up)}|base64 -d >{self.node}" + chr(10))
+
+
+_touch: dict[str, _Touch] = {}
+
+
+def prepare_touch(serial: str) -> bool:
+    """Finds the touch screen of `serial` and opens a shell on it, so `tap` skips `input tap`. False when the touch
+    screen can't be used directly (rotated or scaled in a way this doesn't follow, or not writable): `tap` then
+    keeps using `input tap`."""
+    _touch.pop(serial, None)
+    size = screen_size(serial)
+    devices = _shell_output(serial, "getevent", "-pl").split("add device ")
+    found = None
+    for block in devices[1:]:
+        max_x = re.search(r"ABS_MT_POSITION_X\s*:.*?max (\d+)", block)
+        max_y = re.search(r"ABS_MT_POSITION_Y\s*:.*?max (\d+)", block)
+        node = re.search(r"^\d+: (/dev/input/event\d+)", block)
+        if max_x and max_y and node and "INPUT_PROP_DIRECT" in block:
+            found = node.group(1), int(max_x.group(1)), int(max_y.group(1)), block
+            break
+    if not size or not found:
+        return False
+    node, max_x, max_y, block = found
+    mapper = _shell_output(serial, "dumpsys", "input").split("DeviceType: touchScreen", 1)
+    if len(mapper) < 2:
+        return False
+    xscale = re.search(r"XScale: ([\d.]+)", mapper[1])
+    yscale = re.search(r"YScale: ([\d.]+)", mapper[1])
+    turned = re.search(r"SurfaceOrientation: (\d)", mapper[1])
+    if not xscale or not yscale or (turned and turned.group(1) != "0"):
+        return False
+    width, height = size
+    if abs(float(xscale.group(1)) - width / (max_x + 1)) > 0.002:
+        return False
+    if abs(float(yscale.group(1)) - height / (max_y + 1)) > 0.002:
+        return False
+    check = _shell_output(serial, f": >{node} && echo AAAA | base64 -d | od -An -tx1 && "
+                                  f"head -c 5 /system/bin/toybox | od -An -tx1")
+    lines = check.splitlines()
+    if len(lines) < 2 or lines[0].split() != ["00", "00", "00"] or len(lines[1].split()) != 5:
+        return False
+    event_format = "<qqHHi" if lines[1].split()[4] == "02" else "<iiHHi"
+    _touch[serial] = _Touch(node, (max_x + 1) / width, (max_y + 1) / height, max_x, max_y, event_format,
+                            "BTN_TOUCH" in block, "ABS_MT_PRESSURE" in block)
+    return _touch_shell(_touch[serial], serial) is not None
+
+
+def _touch_shell(touch: _Touch, serial: str) -> subprocess.Popen | None:
+    if touch.shell is None or touch.shell.poll() is not None:
+        try:
+            touch.shell = subprocess.Popen([ADB_BIN, "-s", serial, "shell"], stdin=subprocess.PIPE,
+                                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                           creationflags=NO_WINDOW)
+        except OSError:
+            touch.shell = None
+    return touch.shell
+
+
+def _touch_tap(serial: str, x: int, y: int) -> bool:
+    touch = _touch.get(serial)
+    if touch is None:
+        return False
+    with touch.lock:
+        for _ in range(2):
+            shell = _touch_shell(touch, serial)
+            if shell is None:
+                return False
+            try:
+                shell.stdin.write(touch.command(x, y).encode())
+                shell.stdin.flush()
+                return True
+            except OSError:
+                shell.kill()
+    return False
+
+
+def close_touch() -> None:
+    for touch in list(_touch.values()):
+        if touch.shell is not None and touch.shell.poll() is None:
+            touch.shell.kill()
+    _touch.clear()
 
 
 CLICKER_PACKAGES = ("com.puni.smartautoclicker.debug", "com.puni.smartautoclicker")
@@ -157,6 +268,10 @@ def booted(serial: str) -> bool:
 
 def clicker_service_ready(serial: str, package: str) -> bool:
     return "SmartAutoClickerService" in _shell_output(serial, "dumpsys", "activity", "services", package)
+
+
+def unlink(serial: str, port: int) -> None:
+    _run("-s", serial, "reverse", "--remove", f"tcp:{port}", check=False)
 
 
 def resume_clicker(serial: str, package: str, scenario: str | None = None) -> None:

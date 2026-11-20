@@ -45,7 +45,7 @@ GROUPS = [
          "Two login screens reported within this time mean both emulators are waiting, so one gets the login tap."),
         ("login_retry_seconds", "Login retry (s)", "Shortest time between two login taps."),
         ("stage_clear_tap_delay_seconds", "Login tap delay (s)",
-         "Wait after a stage clear before tapping login on the other emulator."),
+         "Wait after a stage clear before tapping login on the other emulator. 0 taps at once."),
     ]),
     ("Login button", [
         ("login_button_x", "Login button X", LOGIN_TIP),
@@ -62,8 +62,6 @@ GROUPS = [
         ("ask_mode", "Ask the mode when the program opens",
          "Ask every time whether to play in dual (two rooms taking turns) or single (each room plays on its own). "
          "Off, it opens in the last mode used; the ⇄ button on the panel changes it."),
-        ("start_automatically", "Start when the program opens",
-         "Start playing right away when you open the program."),
         ("on_close", "Closing the window",
          "What the X of the window does: ask every time, keep the program running next to the clock "
          "(notification area), or close it completely."),
@@ -113,6 +111,15 @@ class SettingsPage(ui.Page):
             if title == "Emulator restart":
                 self.restart = ttk.Button(card.body, text="Restart both now", command=self._restart_now)
                 self.restart.grid(row=0, column=4, padx=(12, 0))
+        bridge = ui.Card(scroll.inner, "Bridge (only for a clicker set up by hand)")
+        bridge.pack(fill="x", pady=(0, 8), padx=(0, 4))
+        note = tk.Label(bridge.body, text="You don't need these: Send and Start set them in the clicker for you. "
+                                          "Don't type them in a config.", bg=ui.CARD, fg=ui.MUTED,
+                        font=(ui.FONT, 9), anchor="w", justify="left")
+        note.pack(fill="x", pady=(0, 4))
+        bridge.row("Address", "127.0.0.1", copy=True)
+        self.bridge_port = bridge.row("Port", copy=True)
+        self.bridge_token = bridge.row("Token", copy=True, secret=True)
 
     def _field(self, parent, row: int, key: str, label: str, tip: str) -> None:
         default = settings.DEFAULTS[key]
@@ -139,6 +146,8 @@ class SettingsPage(ui.Page):
 
     def shown(self) -> None:
         data = settings.load()
+        self.bridge_port.set(str(data["port"]))
+        self.bridge_token.set(data["token"])
         for key, var in self.vars.items():
             var.set(dict(CHOICES[key]).get(data[key], data[key]) if key in CHOICES else data[key])
         self._say("")

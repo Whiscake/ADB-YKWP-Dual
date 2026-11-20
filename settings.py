@@ -44,7 +44,6 @@ DEFAULTS = {
     "ask_mode": True,
     "single_devices": [],
     "single_names": {},
-    "start_automatically": True,
     "write_logs": True,
     "token": "",
     "port": 8765,
@@ -59,7 +58,7 @@ DEFAULTS = {
     "force_stop_after_seconds": 300.0,
     "both_at_login_window_seconds": 6.0,
     "login_retry_seconds": 8.0,
-    "stage_clear_tap_delay_seconds": 0.20,
+    "stage_clear_tap_delay_seconds": 0.0,
     "tap_jitter_pixels": 8,
     "points_per_clear": 22,
     "forecast_target_datetime": "",
@@ -83,6 +82,8 @@ def load() -> dict:
         data.update(json.loads(SETTINGS_FILE.read_text()))
     if (data["login_button_x"], data["login_button_y"]) == (525, 1187):
         data["login_button_x"], data["login_button_y"] = 660, 1484
+    if data["stage_clear_tap_delay_seconds"] == 0.2:
+        data["stage_clear_tap_delay_seconds"] = 0.0
     return data
 
 
