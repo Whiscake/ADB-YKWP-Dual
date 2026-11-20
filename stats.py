@@ -20,7 +20,7 @@ LINE_RE = re.compile(r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3}) (.*)$")
 CLEAR_MARKER = "stage clear detected on"
 STUCK_MARKER = "has not cleared a stage in"
 RECOVERED_MARKER = "recovered after being stuck for"
-STARTING_MARKER = "starting: active="
+STARTING_MARKER = "starting: "
 RESTARTED_MARKER = " restarted and resumed"
 RULE = "-" * 66
 
@@ -50,16 +50,24 @@ def _parse_target(text: str):
 
 
 def compute_stats() -> dict:
+    """Clear times are measured per room in single mode, where every room plays its own battles."""
     now = datetime.now()
     window_start = now - timedelta(hours=config.STATS_UPTIME_WINDOW_HOURS)
+    single = config.MODE == "single"
 
-    clear_durations: list = []
-    prev_clear_ts = None
-    saw_stuck_since_last_clear = False
-    stuck_open_since = None
+    durations: dict[str, list] = {}
+    prev_clear: dict[str, datetime] = {}
+    stuck_seen: set[str] = set()
+    stuck_open: dict[str, datetime] = {}
     downtime = timedelta()
+    room_downtime: dict[str, timedelta] = {}
+    room_clears: dict[str, int] = {}
     session_clears = 0
+    last_clear = None
     restarts: dict[str, int] = {}
+
+    def room(text: str) -> str:
+        return text.strip() if single else ""
 
     for ts, msg in _iter_lines():
         if msg.endswith(RESTARTED_MARKER):
@@ -68,40 +76,53 @@ def compute_stats() -> dict:
                 restarts[serial] = restarts.get(serial, 0) + 1
             continue
 
-        if STARTING_MARKER in msg:
-            stuck_open_since = None
-            prev_clear_ts = None
-            saw_stuck_since_last_clear = False
+        if msg.startswith(STARTING_MARKER):
+            durations.clear()
+            prev_clear.clear()
+            stuck_seen.clear()
+            stuck_open.clear()
+            room_clears.clear()
+            room_downtime.clear()
             session_clears = 0
+            last_clear = None
             continue
 
         if msg.startswith(CLEAR_MARKER):
-            if prev_clear_ts is not None and not saw_stuck_since_last_clear:
-                clear_durations.append((ts - prev_clear_ts).total_seconds())
-            prev_clear_ts = ts
-            saw_stuck_since_last_clear = False
+            key = room(msg[len(CLEAR_MARKER):])
+            if key in prev_clear and key not in stuck_seen:
+                durations.setdefault(key, []).append((ts - prev_clear[key]).total_seconds())
+            prev_clear[key] = ts
+            stuck_seen.discard(key)
             session_clears += 1
+            room_clears[key] = room_clears.get(key, 0) + 1
+            last_clear = ts
             continue
 
         if STUCK_MARKER in msg:
-            saw_stuck_since_last_clear = True
-            if stuck_open_since is None:
-                stuck_open_since = ts
+            key = room(msg.split(STUCK_MARKER)[0].removesuffix(" has"))
+            stuck_seen.add(key)
+            stuck_open.setdefault(key, ts)
             continue
 
         if RECOVERED_MARKER in msg:
-            if stuck_open_since is not None and ts > window_start:
-                downtime += ts - max(stuck_open_since, window_start)
-            stuck_open_since = None
+            key = room(msg.split(RECOVERED_MARKER)[0])
+            since = stuck_open.pop(key, None)
+            if since is not None and ts > window_start:
+                lost = ts - max(since, window_start)
+                downtime += lost
+                room_downtime[key] = room_downtime.get(key, timedelta()) + lost
 
-    if stuck_open_since is not None:
-        downtime += now - max(stuck_open_since, window_start)
+    for key, since in stuck_open.items():
+        lost = now - max(since, window_start)
+        downtime += lost
+        room_downtime[key] = room_downtime.get(key, timedelta()) + lost
 
-    recent = clear_durations[-config.STATS_CLEAR_SAMPLE_SIZE:]
+    recent = {key: values[-config.STATS_CLEAR_SAMPLE_SIZE:] for key, values in durations.items() if values}
+    every = [value for values in recent.values() for value in values]
     window_seconds = config.STATS_UPTIME_WINDOW_HOURS * 3600
-    downtime_seconds = min(downtime.total_seconds(), window_seconds)
-    avg_clear = sum(recent) / len(recent) if recent else None
-    points_per_hour = config.POINTS_PER_CLEAR / avg_clear * 3600 if avg_clear else None
+    downtime_seconds = min(downtime.total_seconds(), window_seconds * max(1, len(config.DEVICES)))
+    avg_clear = sum(every) / len(every) if every else None
+    points_per_hour = sum(config.POINTS_PER_CLEAR / (sum(v) / len(v)) * 3600 for v in recent.values())         if recent else None
 
     points_to_target = None
     target = _parse_target(config.FORECAST_TARGET_DATETIME) if config.FORECAST_TARGET_DATETIME else None
@@ -109,19 +130,26 @@ def compute_stats() -> dict:
         points_to_target = points_per_hour * max(0.0, (target - now).total_seconds() / 3600)
 
     return {
-        "sample_size": len(recent),
+        "sample_size": len(every),
         "avg_clear": avg_clear,
-        "fastest_clear": min(recent) if recent else None,
-        "slowest_clear": max(recent) if recent else None,
-        "uptime_pct": max(0.0, (window_seconds - downtime_seconds) / window_seconds * 100),
+        "fastest_clear": min(every) if every else None,
+        "slowest_clear": max(every) if every else None,
+        "uptime_pct": max(0.0, (window_seconds - min(downtime_seconds, window_seconds)) / window_seconds * 100),
         "downtime_seconds": downtime_seconds,
         "session_clears": session_clears,
-        "last_clear": prev_clear_ts,
+        "last_clear": last_clear,
         "points_per_hour": points_per_hour,
         "points_per_day": points_per_hour * 24 if points_per_hour else None,
         "points_to_target": points_to_target,
         "target": target,
         "restarts": restarts,
+        "rooms": {key: {
+            "clears": room_clears.get(key, 0),
+            "avg_clear": sum(recent[key]) / len(recent[key]) if key in recent else None,
+            "points_per_hour": config.POINTS_PER_CLEAR / (sum(recent[key]) / len(recent[key])) * 3600
+            if key in recent else None,
+            "downtime_seconds": room_downtime.get(key, timedelta()).total_seconds(),
+        } for key in set(room_clears) | set(room_downtime) if key},
     }
 
 
@@ -136,6 +164,8 @@ def _duration(seconds: float) -> str:
 
 
 def _status(coordinator) -> str:
+    if hasattr(coordinator, "status"):
+        return coordinator.status()
     now = time.time()
     if coordinator.active is None:
         return "waiting for the first stage clear or login screen"
@@ -161,7 +191,7 @@ def render(coordinator, recent: RecentWarnings) -> list:
         RULE,
         f"Bridge address : 127.0.0.1 (through adb reverse)   Port: {config.BRIDGE_PORT}",
         f"Bridge token   : {config.BRIDGE_TOKEN}",
-        f"Devices        : {config.DEVICE_A}, {config.DEVICE_B}",
+        f"Devices        : {', '.join(config.DEVICES)}",
         f"Status         : {_status(coordinator)}",
         RULE,
     ]

@@ -14,6 +14,11 @@ NONE = "(none)"
 FROM_PC = "A file on this PC..."
 
 
+SINGLE_EVENT_TIP = ("The event that runs once at the end of every battle, like the one that presses OK on the defeat "
+                    "or the stage clear screen. Each time it runs, the clicker tells this program the room is still "
+                    "playing. When it stops, the program closes and opens the game, then restarts the emulator.")
+
+
 class ConfigPage(ui.Page):
     title = "Clicker config"
     help = ("1  Choose where your clicker config is: in one of the emulators, or a backup file on this PC.\n"
@@ -178,3 +183,181 @@ class ConfigPage(ui.Page):
 
 def _safe(text: str) -> str:
     return "".join(c if c.isalnum() or c in " -_" else "_" for c in text).strip()
+
+
+class SoloConfigPage(ui.Page):
+    """Single mode: every room keeps its own config, so each one is read from and sent back to its own clicker."""
+    title = "Clicker config"
+    help = ("1  Press Read configs: the program reads the configs saved in the clicker of every room.\n"
+            "2  For each room choose its config and the event that runs once at the end of every battle, like the "
+            "one that presses OK on the defeat or the stage clear screen.\n"
+            "3  Press Send: each room gets a copy of its own config called '(solo ...)', and the panel picks it "
+            "for that room.")
+
+    def __init__(self, app) -> None:
+        super().__init__(app)
+        self.folder = tempfile.TemporaryDirectory()
+        self.busy = False
+        self.rooms: list[tuple[str, str]] = []
+        self.found: dict[str, tuple[Path, list[configs.Scenario]]] = {}
+        self.widgets: dict[str, tuple[ttk.Combobox, ttk.Combobox, tk.StringVar]] = {}
+
+        top = tk.Frame(self, bg=ui.BACKGROUND)
+        top.pack(fill="x")
+        ui.badge(top, 1).pack(side="left")
+        self.read = ttk.Button(top, text="⟳  Read configs", command=self._read)
+        self.read.pack(side="left", padx=6)
+
+        middle = tk.Frame(self, bg=ui.BACKGROUND)
+        middle.pack(fill="x", pady=(10, 0))
+        ui.badge(middle, 2).pack(side="left", anchor="n", pady=4)
+        self.table = tk.Frame(middle, bg=ui.CARD, highlightbackground=ui.BORDER, highlightthickness=1, padx=10,
+                              pady=8)
+        self.table.pack(side="left", fill="x", expand=True, padx=(6, 0))
+        self.table.columnconfigure((1, 2), weight=1)
+
+        actions = tk.Frame(self, bg=ui.BACKGROUND)
+        actions.pack(fill="x", pady=(14, 0))
+        ui.badge(actions, 3).pack(side="left")
+        self.send = ttk.Button(actions, text="Send to every room", style="Big.TButton", command=self._send)
+        self.send.pack(side="left", padx=6)
+        ui.info(actions, "Your configs are not changed. Each room gets a copy of the config chosen for it, with the "
+                         "command added to its battle end event, and the program links its clicker to this "
+                         "computer. Rooms with no config chosen are left as they are.", ui.BACKGROUND).pack(
+            side="left")
+
+        self.status = tk.StringVar()
+        tk.Label(self, textvariable=self.status, bg=ui.BACKGROUND, fg=ui.MUTED, anchor="w", justify="left",
+                 wraplength=640).pack(fill="x", pady=(10, 0))
+
+    def shown(self) -> None:
+        config.reload()
+        rooms = [(s, config.DEVICE_NAMES.get(s, s)) for s in config.DEVICES if s]
+        if rooms != self.rooms:
+            self.rooms = rooms
+            self.found.clear()
+            self._build()
+        if not rooms:
+            self.status.set("Pick the rooms first (emulators page).")
+        elif not self.found and not self.busy:
+            self._read()
+        self._update()
+
+    def _build(self) -> None:
+        for child in self.table.winfo_children():
+            child.destroy()
+        self.widgets.clear()
+        for column, text in enumerate(("Room", "Config", "Battle end event")):
+            tk.Label(self.table, text=text, bg=ui.CARD, fg=ui.MUTED, font=(ui.FONT, 9, "bold")).grid(
+                row=0, column=column, sticky="w", padx=(0, 8))
+        ui.info(self.table, SINGLE_EVENT_TIP).grid(row=0, column=3, sticky="e")
+        for index, (serial, name) in enumerate(self.rooms):
+            row = 1 + index * 2
+            tk.Label(self.table, text=name, bg=ui.CARD, fg=ui.TEXT, font=(ui.FONT, 10, "bold")).grid(
+                row=row, column=0, sticky="w", padx=(0, 8), pady=(6, 0))
+            scenario = ttk.Combobox(self.table, state="readonly", width=28)
+            scenario.grid(row=row, column=1, sticky="ew", padx=(0, 8), pady=(6, 0))
+            event = ttk.Combobox(self.table, state="readonly", width=28)
+            event.grid(row=row, column=2, columnspan=2, sticky="ew", pady=(6, 0))
+            note = tk.StringVar()
+            tk.Label(self.table, textvariable=note, bg=ui.CARD, fg=ui.MUTED, font=(ui.FONT, 9)).grid(
+                row=row + 1, column=1, columnspan=3, sticky="w")
+            scenario.bind("<<ComboboxSelected>>", lambda _, s=serial: self._scenario_changed(s))
+            event.bind("<<ComboboxSelected>>", lambda _: self._update())
+            self.widgets[serial] = (scenario, event, note)
+
+    def _read(self) -> None:
+        adb, rooms, folder = self.app.adb, list(self.rooms), Path(self.folder.name)
+
+        def job() -> dict:
+            found = {}
+            for serial, name in rooms:
+                local = folder / f"{_safe(name)} configs.zip"
+                if emulators.export_scenarios(adb, serial, local):
+                    found[serial] = (local, [s for s in configs.read(local) if not _copy(s.name)])
+            return found
+
+        def done(found: dict) -> None:
+            self.found = found
+            for serial, _ in self.rooms:
+                scenario, event, note = self.widgets[serial]
+                listed = found.get(serial, (None, []))[1]
+                scenario.configure(values=[s.name for s in listed])
+                scenario.set("")
+                event.configure(values=[])
+                event.set("")
+                note.set(f"{len(listed)} config(s) in this clicker" if serial in found else
+                         "Could not read this clicker. Is it installed and opened once?")
+            self.status.set("Choose a config and its battle end event for each room, then press Send.")
+
+        self._work("Reading the configs of every room...", job, done)
+
+    def _scenario(self, serial: str) -> configs.Scenario | None:
+        listed = self.found.get(serial, (None, []))[1]
+        index = self.widgets[serial][0].current()
+        return listed[index] if 0 <= index < len(listed) else None
+
+    def _event(self, serial: str) -> int | None:
+        scenario = self._scenario(serial)
+        index = self.widgets[serial][1].current()
+        return scenario.events[index][0] if scenario and 0 <= index < len(scenario.events) else None
+
+    def _scenario_changed(self, serial: str) -> None:
+        scenario = self._scenario(serial)
+        event = self.widgets[serial][1]
+        event.configure(values=[f"{name}  #{event_id}" for event_id, name in scenario.events] if scenario else [])
+        event.set("")
+        self._update()
+
+    def _ready(self) -> list[str]:
+        return [serial for serial, _ in self.rooms if self._event(serial)]
+
+    def _update(self) -> None:
+        self.read.state(["disabled"] if self.busy or not self.rooms else ["!disabled"])
+        self.send.state(["!disabled"] if self._ready() and not self.busy else ["disabled"])
+
+    def _work(self, message: str, job, done) -> None:
+        self.busy = True
+        self.status.set(message)
+        self._update()
+
+        def finish(result) -> None:
+            self.busy = False
+            if isinstance(result, Exception):
+                self.status.set(f"Error: {result}")
+            else:
+                done(result)
+            self._update()
+
+        self.app.run_job(job, finish)
+
+    def _send(self) -> None:
+        names = dict(self.rooms)
+        plan = [(serial, self.found[serial][0], self._scenario(serial), self._event(serial))
+                for serial in self._ready()]
+        adb, link, folder = self.app.adb, self.app.link, Path(self.folder.name)
+
+        def job() -> list[str]:
+            sent, chosen = [], {}
+            for serial, source, scenario, event in plan:
+                copy = f"{scenario.name} (solo {names[serial]})"
+                target = folder / f"{_safe(copy)}.zip"
+                configs.prepare(source, target, scenario, event, None, serial, copy)
+                if emulators.import_scenarios(adb, serial, target):
+                    link(serial)
+                    sent.append(names[serial])
+                    chosen[serial] = copy
+            if chosen:
+                data = settings.load()
+                data["single_configs"] = {**data["single_configs"], **chosen}
+                settings.save(data)
+                config.reload()
+            return sent
+
+        self._work("Preparing and sending...", job, lambda sent: self.status.set(
+            f"Done on {', '.join(sent)}. Press Start on the panel: every room opens the game and plays its "
+            f"'(solo ...)' copy by itself." if sent else "Nothing was sent: check that the clicker is installed."))
+
+
+def _copy(name: str) -> bool:
+    return name.endswith(")") and ("(solo " in name or "(dual " in name)

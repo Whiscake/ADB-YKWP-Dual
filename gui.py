@@ -39,28 +39,81 @@ class QueueHandler(logging.Handler):
         self.target.put((record.levelno, self.format(record).splitlines()[0]))
 
 
+MODES = {
+    "dual": ("⇄  Dual", "Two rooms take turns: one plays a stage while the other logs in, then they swap. "
+                       "Needs two emulator instances."),
+    "single": ("▶  Single", "Each room plays on its own with its clicker config. The program watches every room: "
+                           "when one stops clearing battles it closes and opens the game, then restarts the "
+                           "emulator. One room or more."),
+}
+
+
+def app_title() -> str:
+    return "ADB-YKWP-Dual · Single" if config.MODE == "single" else "ADB-YKWP-Dual"
+
+
+class ModePage(ui.Page):
+    title = "Choose the mode"
+    help = "Pick how the rooms play. You can change it later with the mode button on the panel."
+
+    def __init__(self, app) -> None:
+        super().__init__(app)
+        box = tk.Frame(self, bg=ui.BACKGROUND)
+        box.place(relx=0.5, rely=0.42, anchor="center")
+        for mode, (name, text) in MODES.items():
+            card = tk.Frame(box, bg=ui.CARD, highlightbackground=ui.BORDER, highlightthickness=1, padx=18, pady=14)
+            card.pack(fill="x", pady=6)
+            tk.Label(card, text=name, bg=ui.CARD, fg=ui.GREEN_DARK, font=(ui.FONT, 14, "bold")).pack(anchor="w")
+            tk.Label(card, text=text, bg=ui.CARD, fg=ui.MUTED, font=(ui.FONT, 10), justify="left",
+                     wraplength=440).pack(anchor="w", pady=(4, 10))
+            ttk.Button(card, text=f"Use {name.split()[-1].lower()} mode", style="Big.TButton",
+                       command=lambda m=mode: app.choose_mode(m)).pack(anchor="e")
+        self.ask = tk.BooleanVar()
+        ttk.Checkbutton(box, text="Ask every time the program opens", variable=self.ask,
+                        style="Page.TCheckbutton").pack(anchor="w", pady=(8, 0))
+
+    def shown(self) -> None:
+        self.ask.set(settings.load()["ask_mode"])
+
+
 class WelcomePage(ui.Page):
     title = "Welcome"
-    help = "This program makes two emulators take turns playing, so one is always logging in while the other plays."
+
+    @property
+    def help(self) -> str:
+        if config.MODE == "single":
+            return "Single mode: each room plays on its own, and the program makes sure none of them gets stuck."
+        return "This program makes two emulators take turns playing, so one is always logging in while the other plays."
 
     def __init__(self, app) -> None:
         super().__init__(app)
         box = tk.Frame(self, bg=ui.BACKGROUND)
         box.place(relx=0.5, rely=0.42, anchor="center")
         tk.Label(box, text="First time here?", bg=ui.BACKGROUND, fg=ui.TEXT, font=(ui.FONT, 16, "bold")).pack()
-        tk.Label(box, text="The tutorial walks you through the setup in three short steps:\n"
-                           "the emulators, the clicker config and the extra settings.",
-                 bg=ui.BACKGROUND, fg=ui.MUTED, font=(ui.FONT, 10), justify="center").pack(pady=(8, 20))
+        self.text = tk.Label(box, bg=ui.BACKGROUND, fg=ui.MUTED, font=(ui.FONT, 10), justify="center")
+        self.text.pack(pady=(8, 20))
         buttons = tk.Frame(box, bg=ui.BACKGROUND)
         buttons.pack()
         ttk.Button(buttons, text="Start tutorial", style="Big.TButton", command=app.start_tutorial).pack(
             side="left", padx=6)
         ttk.Button(buttons, text="Skip tutorial", command=app.finish_tutorial).pack(side="left", padx=6)
 
+    def shown(self) -> None:
+        what = "the instances to watch" if config.MODE == "single" else "the emulators"
+        self.text.configure(text=f"The tutorial walks you through the setup in three short steps:\n"
+                                 f"{what}, the clicker config and the extra settings.")
+
 
 class PanelPage(ui.Page):
-    title = "ADB-YKWP-Dual"
-    help = "Check the config each room plays in the menu next to it, then press Start."
+    @property
+    def title(self) -> str:
+        return app_title()
+
+    @property
+    def help(self) -> str:
+        if config.MODE == "single":
+            return "Check the config each room plays in the menu next to it, then press Start. ⟳ restarts one room."
+        return "Check the config each room plays in the menu next to it, then press Start."
 
     def __init__(self, app) -> None:
         super().__init__(app)
@@ -71,37 +124,50 @@ class PanelPage(ui.Page):
                                cursor="hand2", command=app.toggle)
         self.start.pack(side="left", ipady=4)
         for symbol, tip, command in (("?", "Tutorial", app.start_tutorial),
+                                     ("⇄", "Change mode (dual or single)", app.change_mode),
                                      ("⚙", "Settings", lambda: app.show(app.settings_page)),
                                      ("✎", "Clicker config", lambda: app.show(app.config_page)),
                                      ("⧉", "Emulators", lambda: app.show(app.emulators_page))):
             ui.icon_button(toolbar, symbol, tip, command).pack(side="right", padx=(6, 0))
 
-        top = tk.Frame(self, bg=ui.BACKGROUND)
-        top.pack(fill="x", pady=(10, 0))
-        top.columnconfigure((0, 1), weight=1, uniform="cards")
-        bridge = ui.Card(top, "Bridge")
-        bridge.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
-        bridge.row("Address", "127.0.0.1", copy=True)
-        self.port = bridge.row("Port", copy=True)
-        self.token = bridge.row("Token", copy=True, secret=True)
+        bridge = tk.Frame(self, bg=ui.CARD, highlightbackground=ui.BORDER, highlightthickness=1)
+        bridge.pack(fill="x", pady=(10, 0))
+        line = tk.Frame(bridge, bg=ui.CARD)
+        line.pack(anchor="center", pady=6)
+        tk.Label(line, text="Bridge", bg=ui.CARD, fg=ui.GREEN_DARK, font=(ui.FONT, 10, "bold")).pack(
+            side="left", padx=(0, 6))
+        self.port = tk.StringVar()
+        self.token = tk.StringVar()
+        for label, var, secret in (("Address", tk.StringVar(value="127.0.0.1"), False), ("Port", self.port, False),
+                                   ("Token", self.token, True)):
+            self._bridge_part(line, label, var, secret)
         self.boxes: dict[str, ttk.Combobox] = {}
         self.names: dict[str, list[str]] = {}
-        self.rooms = tk.Frame(bridge.body, bg=ui.CARD)
-        self.rooms.pack(fill="x", pady=(6, 0))
-        self.room_rows: dict[str, tk.StringVar] = {}
+        self.tiles: dict[str, RoomTile] = {}
+        self.rooms = tk.Frame(self, bg=ui.BACKGROUND)
+        self.rooms.pack(fill="x", pady=(10, 0))
 
-        numbers = ui.Card(top, "Stats")
-        numbers.grid(row=0, column=1, sticky="nsew", padx=(6, 0))
-        self.run = numbers.row("This run")
-        self.clear = numbers.row("Clear time")
-        self.uptime = numbers.row("Uptime")
+        totals = tk.Frame(self, bg=ui.CARD, highlightbackground=ui.BORDER, highlightthickness=1, padx=14, pady=10)
+        self.totals = totals
+        head = tk.Frame(totals, bg=ui.CARD)
+        head.pack(fill="x")
+        self.totals_title = tk.Label(head, bg=ui.CARD, fg=ui.GREEN_DARK, font=(ui.FONT, 10, "bold"))
+        self.totals_title.pack(side="left")
+        self._points_per_clear(head).pack(side="right")
+        cells = tk.Frame(totals, bg=ui.CARD)
+        cells.pack(fill="x", pady=(4, 0))
+        self.total = {key: figure(cells, caption, index) for index, (key, caption) in enumerate(
+            (("clears", "clears"), ("points", "points"), ("hour", "points / hour"), ("avg", "avg clear"),
+             ("uptime", "since Start")))}
+        self.total_info = tk.Label(totals, bg=ui.CARD, fg=ui.MUTED, font=(ui.FONT, 9), anchor="w")
+        self.total_info.pack(fill="x", pady=(6, 0))
         self.downtime = "0s"
-        self.points = numbers.row("Points", right=self._points_per_clear)
-        self.target = numbers.row("Forecast")
+        self.extra = ""
 
         log_card = ui.Card(self, "Log")
         log_card.pack(fill="both", expand=True, pady=(10, 0))
-        self.log = tk.Text(log_card.body, height=6, bg="#FCFCFC", fg=ui.TEXT, relief="flat", font=("Consolas", 9),
+        self.log_card = log_card
+        self.log = tk.Text(log_card.body, height=4, bg="#FCFCFC", fg=ui.TEXT, relief="flat", font=("Consolas", 9),
                            state="disabled", wrap="none")
         scroll = ttk.Scrollbar(log_card.body, command=self.log.yview)
         self.log.configure(yscrollcommand=scroll.set)
@@ -110,6 +176,35 @@ class PanelPage(ui.Page):
         self.log.tag_configure("warn", foreground=ui.ORANGE)
         self.log.tag_configure("error", foreground=ui.RED)
         self.device_info: dict[str, str] = {}
+        self.room_stats: dict[str, dict] = {}
+
+    def _bridge_part(self, parent: tk.Misc, label: str, var: tk.StringVar, secret: bool) -> None:
+        part = tk.Frame(parent, bg=ui.CARD)
+        part.pack(side="left", padx=8)
+        tk.Label(part, text=label, bg=ui.CARD, fg=ui.MUTED, font=(ui.FONT, 9)).pack(side="left")
+        shown = var
+        if secret:
+            shown = tk.StringVar()
+            visible = [False]
+
+            def refresh(*_) -> None:
+                shown.set(var.get() if visible[0] else "•" * min(len(var.get()), 16))
+
+            def toggle(state: bool) -> None:
+                visible[0] = state
+                refresh()
+
+            var.trace_add("write", refresh)
+        tk.Label(part, textvariable=shown, bg=ui.CARD, fg=ui.TEXT, font=(ui.FONT, 9, "bold"),
+                 anchor="w").pack(side="left", padx=(5, 3))
+        if secret:
+            ui.eye(part, toggle).pack(side="left", padx=(0, 3))
+
+        def copy() -> None:
+            part.clipboard_clear()
+            part.clipboard_append(var.get())
+
+        ttk.Button(part, text="Copy", width=5, command=copy).pack(side="left")
 
     def _points_per_clear(self, parent: tk.Misc) -> tk.Frame:
         box = tk.Frame(parent, bg=ui.CARD)
@@ -140,20 +235,33 @@ class PanelPage(ui.Page):
         self.per_clear.set(str(config.POINTS_PER_CLEAR))
         self.port.set(str(config.BRIDGE_PORT))
         self.token.set(config.BRIDGE_TOKEN)
+        single = config.MODE == "single"
+        self.totals_title.configure(text="Stats")
+        if single:
+            self.totals.pack_forget()
+        else:
+            self.totals.pack(fill="x", pady=(10, 0), before=self.log_card)
         for child in self.rooms.winfo_children():
             child.destroy()
         self.boxes.clear()
-        self.room_rows = {serial: ui.row(self.rooms, config.DEVICE_NAMES[serial], bold=True,
-                                         right=lambda frame, s=serial: self._config_box(frame, s))
-                          for serial in (config.DEVICE_A, config.DEVICE_B) if serial}
-        if not self.room_rows:
-            tk.Label(self.rooms, text="No emulators picked yet: press ⧉ on the right.", bg=ui.CARD,
-                     fg=ui.MUTED, font=(ui.FONT, 9)).pack(anchor="w")
+        rooms = [serial for serial in config.DEVICES if serial]
+        columns = min(3, max(1, len(rooms)))
+        for column in range(3):
+            used = column < columns
+            self.rooms.columnconfigure(column, weight=1 if used else 0, uniform="rooms" if used else "")
+        self.tiles = {serial: RoomTile(self.rooms, self, serial, single) for serial in rooms}
+        for index, tile in enumerate(self.tiles.values()):
+            tile.grid(row=index // columns, column=index % columns, sticky="nsew",
+                      padx=(0 if index % columns == 0 else 5, 0 if index % columns == columns - 1 else 5),
+                      pady=(0 if index < columns else 10, 0))
+        if not rooms:
+            tk.Label(self.rooms, text="No emulators picked yet: press ⧉ above.", bg=ui.BACKGROUND,
+                     fg=ui.MUTED, font=(ui.FONT, 10)).grid(row=0, column=0, sticky="w")
         self.tick()
 
     def _config_box(self, parent: tk.Misc, serial: str) -> ttk.Combobox:
-        box = ttk.Combobox(parent, state="readonly", width=26, postcommand=lambda: self._load_names(serial))
-        box.set(config.DUAL_CONFIGS.get(serial) or RUNNING)
+        box = ttk.Combobox(parent, state="readonly", width=18, postcommand=lambda: self._load_names(serial))
+        box.set(config.CONFIGS.get(serial) or RUNNING)
         box.configure(values=[RUNNING] + self.names.get(serial, []))
         box.bind("<<ComboboxSelected>>", lambda _: self._choose(serial, box.get()))
         ui.Tooltip(box, "The clicker config this room plays when you press Start. 'Config already running' keeps "
@@ -179,39 +287,45 @@ class PanelPage(ui.Page):
 
     def _choose(self, serial: str, name: str) -> None:
         if name == "loading...":
-            self.boxes[serial].set(config.DUAL_CONFIGS.get(serial) or RUNNING)
+            self.boxes[serial].set(config.CONFIGS.get(serial) or RUNNING)
             return
         data = settings.load()
-        data["dual_configs"] = {**data["dual_configs"], serial: "" if name == RUNNING else name}
+        key = "single_configs" if config.MODE == "single" else "dual_configs"
+        data[key] = {**data[key], serial: "" if name == RUNNING else name}
         settings.save(data)
         config.reload()
 
     def tick(self) -> None:
         coordinator = self.app.coordinator
         running = coordinator is not None
-        busy = self.app.starting
+        single = config.MODE == "single"
         self.start.configure(text="■  Stop" if running else "▶  Start", bg=ui.RED if running else ui.GREEN_DARK,
-                             state="disabled" if busy else "normal")
+                             state="disabled" if self.app.starting else "normal")
         now = time.time()
         started = self.app.started_at
-        self.uptime.set(f"{stats._duration(now - started)} since Start · downtime {self.downtime}" if running and
-                        started else f"stopped · downtime {self.downtime}")
-        for serial, var in self.room_rows.items():
-            parts = []
-            if running:
-                role = ("restarting" if serial in coordinator.restarting else
-                        "playing" if serial == coordinator.active else "waiting" if serial == coordinator.idle
-                        else "")
-                if serial in coordinator.restart_pending and serial not in coordinator.restarting:
-                    role = f"{role}, restart next" if role else "restart next"
-                if role:
-                    parts.append(role)
+        self.total["uptime"].configure(text=stats._duration(now - started) if running and started else "-")
+        self.total_info.configure(text=f"downtime {self.downtime}{self.extra}")
+        for serial, tile in self.tiles.items():
+            if not running:
+                tile.state("STOPPED", ui.GREY, "")
+                continue
+            quiet = now - coordinator.last_clear[serial] if single else 0
+            if serial in coordinator.restarting:
+                phase = coordinator.restart_wait.get(serial, ("starting", now))
+                tile.state("RESTARTING", ui.BLUE, phase[0])
+            elif single and serial in coordinator.stuck_since:
+                tile.state("STUCK", ui.RED, f"no clear for {stats._duration(quiet)}")
+            elif single:
+                tile.state("PLAYING", ui.GREEN_DARK, f"last clear {stats._duration(quiet)} ago"
+                           if serial in coordinator.cleared else "no clear yet")
+            else:
                 event = coordinator.last_event.get(serial)
-                parts.append(f"last: {event[0]} {stats._duration(now - event[1])} ago" if event else
-                             "no message yet")
-            if serial in self.device_info:
-                parts.append(self.device_info[serial])
-            var.set(" · ".join(parts) or "stopped")
+                last = f"last: {event[0]} {stats._duration(now - event[1])} ago" if event else "no message yet"
+                stuck = serial == coordinator.active and coordinator.stuck_since is not None
+                tile.state("STUCK" if stuck else "PLAYING" if serial == coordinator.active else "WAITING",
+                           ui.RED if stuck else ui.GREEN_DARK if serial == coordinator.active else ui.GREY, last)
+            if serial in coordinator.restart_pending and serial not in coordinator.restarting:
+                tile.detail.configure(text=tile.detail.cget("text") + " · restart next")
 
     def add_log(self, level: int, line: str) -> None:
         self.log.configure(state="normal")
@@ -225,27 +339,125 @@ class PanelPage(ui.Page):
 
     def show_stats(self, s: dict) -> None:
         if "error" in s:
-            self.run.set(f"stats error: {s['error']}")
+            self.extra = f" · stats error: {s['error']}"
             return
         duration = stats._duration
         hours = int(config.STATS_UPTIME_WINDOW_HOURS)
-        last = f"last clear {duration((datetime.now() - s['last_clear']).total_seconds())} ago" \
-            if s["last_clear"] else "no clears yet"
-        self.run.set(f"{s['session_clears']} clears · ~{s['session_clears'] * config.POINTS_PER_CLEAR} points · "
-                     f"{last}")
-        self.clear.set(f"avg {s['avg_clear']:.1f}s · fastest {s['fastest_clear']:.1f}s · slowest "
-                       f"{s['slowest_clear']:.1f}s" if s["sample_size"] else "no data yet")
+        clears = s["session_clears"]
+        self.total["clears"].configure(text=str(clears))
+        self.total["points"].configure(text=short(clears * config.POINTS_PER_CLEAR))
+        self.total["hour"].configure(text=short(s["points_per_hour"]) if s["points_per_hour"] else "-")
+        self.total["avg"].configure(text=f"{s['avg_clear']:.2f}s" if s["sample_size"] else "-")
         self.downtime = duration(s["downtime_seconds"])
-        self.points.set(f"~{s['points_per_hour']:.0f}/hour · ~{s['points_per_day']:.0f}/24h"
-                        if s["points_per_hour"] is not None else "no data yet")
-        self.target.set(f"~{s['points_to_target']:.0f} by {s['target']:%Y-%m-%d %H:%M}"
-                        if s["points_to_target"] is not None else "-")
-        for serial in self.room_rows:
+        extra = []
+        if s["sample_size"]:
+            extra.append(f"fastest {s['fastest_clear']:.2f}s · slowest {s['slowest_clear']:.2f}s")
+        if s["points_per_day"]:
+            extra.append(f"~{short(s['points_per_day'])} points / 24h")
+        if s["points_to_target"] is not None:
+            extra.append(f"~{short(s['points_to_target'])} by {s['target']:%Y-%m-%d %H:%M}")
+        self.extra = "".join(f" · {part}" for part in extra)
+        for serial, tile in self.tiles.items():
             restarts = s["restarts"].get(serial, 0)
             up = s["device_uptime"].get(serial)
             on = f"on for {duration(up)}" if up is not None else "not reachable"
-            self.device_info[serial] = f"{on} · {restarts} restart{'' if restarts == 1 else 's'} in {hours}h"
+            info = f"{on} · {restarts} restart{'' if restarts == 1 else 's'} in {hours}h"
+            room = s["rooms"].get(serial)
+            if config.MODE == "single":
+                room = room or {"clears": 0, "avg_clear": None, "downtime_seconds": 0}
+                points = config.ROOM_POINTS.get(serial, config.POINTS_PER_CLEAR)
+                tile.figures["clears"].configure(text=str(room["clears"]))
+                tile.figures["points"].configure(text=short(room["clears"] * points))
+                tile.figures["avg"].configure(text=f"{room['avg_clear']:.2f}s" if room["avg_clear"] else "-")
+                tile.figures["hour"].configure(text=short(points / room["avg_clear"] * 3600)
+                                               if room["avg_clear"] else "-")
+                info += f" · downtime {duration(room['downtime_seconds'])}"
+            tile.info.configure(text=info)
         self.tick()
+
+
+def short(number: float) -> str:
+    if number >= 1000000:
+        return f"{number / 1000000:.3f}M"
+    if number >= 1000:
+        return f"{number / 1000:.2f}k"
+    return f"{number:.0f}"
+
+
+def figure(parent: tk.Misc, caption: str, column: int) -> tk.Label:
+    parent.columnconfigure(column, weight=1, uniform="figures")
+    cell = tk.Frame(parent, bg=ui.CARD)
+    cell.grid(row=0, column=column, sticky="w", pady=2)
+    value = tk.Label(cell, text="-", bg=ui.CARD, fg=ui.TEXT, font=(ui.FONT, 16, "bold"))
+    value.pack(anchor="w")
+    tk.Label(cell, text=caption, bg=ui.CARD, fg=ui.MUTED, font=(ui.FONT, 8)).pack(anchor="w")
+    return value
+
+
+class RoomTile(tk.Frame):
+    """One room: its state, its numbers in single mode, the config it plays and its restart button."""
+
+    def __init__(self, parent: tk.Misc, panel: PanelPage, serial: str, single: bool) -> None:
+        super().__init__(parent, bg=ui.CARD, highlightbackground=ui.BORDER, highlightthickness=1, padx=12, pady=10)
+        head = tk.Frame(self, bg=ui.CARD)
+        head.pack(fill="x")
+        tk.Label(head, text=config.DEVICE_NAMES.get(serial, serial), bg=ui.CARD, fg=ui.TEXT,
+                 font=(ui.FONT, 12, "bold")).pack(side="left")
+        self.pill = tk.Label(head, text="STOPPED", bg=ui.GREY, fg="white", font=(ui.FONT, 8, "bold"), padx=8)
+        self.pill.pack(side="right")
+        self.detail = tk.Label(self, bg=ui.CARD, fg=ui.TEXT, font=(ui.FONT, 9), anchor="w")
+        self.detail.pack(fill="x", pady=(2, 0))
+        self.figures: dict[str, tk.Label] = {}
+        if single:
+            grid = tk.Frame(self, bg=ui.CARD)
+            grid.pack(fill="x", pady=(6, 0))
+            for index, (key, caption) in enumerate((("clears", "clears"), ("points", "points"),
+                                                     ("avg", "avg clear"), ("hour", "points / hour"))):
+                grid.columnconfigure(index % 2, weight=1, uniform="figures")
+                cell = tk.Frame(grid, bg=ui.CARD)
+                cell.grid(row=index // 2, column=index % 2, sticky="w", pady=2)
+                value = tk.Label(cell, text="-", bg=ui.CARD, fg=ui.TEXT, font=(ui.FONT, 15, "bold"))
+                value.pack(anchor="w")
+                tk.Label(cell, text=caption, bg=ui.CARD, fg=ui.MUTED, font=(ui.FONT, 8)).pack(anchor="w")
+                self.figures[key] = value
+            points = tk.Frame(self, bg=ui.CARD)
+            points.pack(fill="x", pady=(4, 0))
+            tk.Label(points, text="points per clear", bg=ui.CARD, fg=ui.MUTED, font=(ui.FONT, 9)).pack(side="left")
+            self.per_clear = tk.StringVar(value=str(config.ROOM_POINTS.get(serial, config.POINTS_PER_CLEAR)))
+            entry = ttk.Entry(points, textvariable=self.per_clear, width=6, justify="right")
+            entry.pack(side="left", padx=(6, 0))
+            entry.bind("<Return>", lambda _: self._save_points(serial, panel))
+            entry.bind("<FocusOut>", lambda _: self._save_points(serial, panel))
+            ui.info(points, "The points one battle gives in this room. Type it and press Enter: the points of "
+                            "this room use it.").pack(side="left")
+        tools = tk.Frame(self, bg=ui.CARD)
+        tools.pack(fill="x", pady=(8, 0))
+        if single:
+            button = ttk.Button(tools, text="⟳", width=3, command=lambda: panel.app.restart_room(serial))
+            button.pack(side="right", padx=(4, 0))
+            ui.Tooltip(button, "Restart this room now (LDPlayer only)")
+        panel._config_box(tools, serial).pack(side="left", fill="x", expand=True)
+        self.info = tk.Label(self, bg=ui.CARD, fg=ui.MUTED, font=(ui.FONT, 8), anchor="w", justify="left")
+        self.info.pack(fill="x", pady=(4, 0))
+        self.info.bind("<Configure>", lambda e: self.info.configure(wraplength=max(80, e.width - 4)))
+
+    def _save_points(self, serial: str, panel: PanelPage) -> None:
+        current = config.ROOM_POINTS.get(serial, config.POINTS_PER_CLEAR)
+        try:
+            value = max(0, int(float(self.per_clear.get())))
+        except ValueError:
+            value = current
+        self.per_clear.set(str(value))
+        if value != current:
+            data = settings.load()
+            data["room_points"] = {**data["room_points"], serial: value}
+            settings.save(data)
+            config.reload()
+            panel.app._refresh_stats_now()
+
+    def state(self, name: str, color: str, detail: str) -> None:
+        self.pill.configure(text=name, bg=color)
+        self.detail.configure(text=detail)
 
 
 class App:
@@ -257,13 +469,14 @@ class App:
         self.started_at = 0.0
         self.starting = False
         self.tray = None
+        self.opened = False
         self.tutorial = False
         self.step = 0
         self.jobs: queue.Queue = queue.Queue()
         self.events: queue.Queue = queue.Queue()
         logging.getLogger("coordinator").addHandler(QueueHandler(self.events))
 
-        root.title("ADB-YKWP-Dual")
+        root.title(app_title())
         root.geometry("800x700")
         root.minsize(640, 620)
         root.configure(bg=ui.BACKGROUND)
@@ -302,11 +515,12 @@ class App:
         self.body = tk.Frame(root, bg=ui.BACKGROUND)
         self.body.pack(fill="both", expand=True, padx=16, pady=12)
         self.welcome = WelcomePage(self)
+        self.mode_page = ModePage(self)
         self.emulators_page = devices.EmulatorsPage(self)
-        self.config_page = prepare.ConfigPage(self)
+        self.dual_config_page = prepare.ConfigPage(self)
+        self.solo_config_page = prepare.SoloConfigPage(self)
         self.settings_page = options.SettingsPage(self)
         self.panel = PanelPage(self)
-        self.steps = [self.emulators_page, self.config_page, self.settings_page]
         self.page: ui.Page | None = None
 
         if sys.platform == "win32" and ICON.exists():
@@ -316,13 +530,55 @@ class App:
         self._poll()
         self._tick()
         self._refresh_stats()
-        data = settings.load()
-        if not data["tutorial_done"]:
-            self.show(self.welcome)
+        if settings.load()["ask_mode"]:
+            self.show(self.mode_page)
         else:
-            self.show(self.panel)
-            if data["start_automatically"] and data["device_a"] and data["device_b"]:
-                self.start()
+            self.open_mode(autostart=True)
+
+    def _tutorial_key(self) -> str:
+        return "single_tutorial_done" if config.MODE == "single" else "tutorial_done"
+
+    def choose_mode(self, mode: str) -> None:
+        data = settings.load()
+        changed = data["mode"] != mode
+        data["mode"] = mode
+        data["ask_mode"] = self.mode_page.ask.get()
+        settings.save(data)
+        if changed:
+            self.panel.names.clear()
+            self.panel.device_info.clear()
+            self.panel.room_stats.clear()
+        self.open_mode(autostart=not self.opened)
+
+    def open_mode(self, autostart: bool) -> None:
+        config.reload()
+        self.opened = True
+        self.root.title(app_title())
+        if not settings.load()[self._tutorial_key()]:
+            self.show(self.welcome)
+            return
+        self.show(self.panel)
+        if autostart and settings.load()["start_automatically"] and self._rooms_ready():
+            self.start()
+
+    def _rooms_ready(self) -> bool:
+        return bool(config.DEVICES) if config.MODE == "single" else bool(config.DEVICE_A and config.DEVICE_B)
+
+    def change_mode(self) -> None:
+        if self.coordinator:
+            if not messagebox.askyesno(app_title(), "Stop playing and change the mode?"):
+                return
+            self.stop(then=lambda: self.show(self.mode_page))
+            return
+        self.show(self.mode_page)
+
+    @property
+    def config_page(self) -> ui.Page:
+        return self.solo_config_page if config.MODE == "single" else self.dual_config_page
+
+    @property
+    def steps(self) -> list:
+        return [self.emulators_page, self.config_page, self.settings_page]
 
     def show(self, page: ui.Page) -> None:
         if self.page:
@@ -342,7 +598,7 @@ class App:
         self.back_to_panel.pack_forget()
         if page is self.panel:
             self.status.pack(side="right", padx=16)
-        elif page is not self.welcome and not self.tutorial:
+        elif page not in (self.welcome, self.mode_page) and not self.tutorial:
             self.back_to_panel.pack(side="right", padx=16)
         page.pack(fill="both", expand=True)
         page.shown()
@@ -372,7 +628,7 @@ class App:
     def finish_tutorial(self) -> None:
         self.tutorial = False
         data = settings.load()
-        data["tutorial_done"] = True
+        data[self._tutorial_key()] = True
         settings.save(data)
         config.reload()
         self.show(self.panel)
@@ -431,7 +687,7 @@ class App:
         self.run_job(self._stats_job(), self.panel.show_stats)
 
     def _stats_job(self):
-        serials = [s for s in (config.DEVICE_A, config.DEVICE_B) if s]
+        serials = [s for s in config.DEVICES if s]
 
         def job() -> dict:
             try:
@@ -455,16 +711,18 @@ class App:
 
     def start(self) -> None:
         config.reload()
-        if not (config.DEVICE_A and config.DEVICE_B):
+        if not self._rooms_ready():
             self.show(self.emulators_page)
-            self.emulators_page.status.set("Tick the two instances to use, then press 'Use these two instances'.")
+            self.emulators_page.status.set("Tick the instances to use, then press 'Use these instances'."
+                                           if config.MODE == "single" else
+                                           "Tick the two instances to use, then press 'Use these two instances'.")
             return
         if self.starting or self.coordinator:
             return
         self.starting = True
 
         def job():
-            devices = (config.DEVICE_A, config.DEVICE_B)
+            devices = config.DEVICES
             problems = [problem for problem in map(handoff.check_device, devices) if problem]
             if problems:
                 return RuntimeError("; ".join(problems))
@@ -477,7 +735,7 @@ class App:
                         raise
                     time.sleep(0.5)
             workers = [threading.Thread(target=handoff.prepare_device, args=(serial,), daemon=True)
-                       for serial in (config.DEVICE_A, config.DEVICE_B)]
+                       for serial in devices]
             for worker in workers:
                 worker.start()
             for worker in workers:
@@ -513,13 +771,26 @@ class App:
     def pair_changed(self) -> None:
         config.reload()
         self.panel.device_info.clear()
+        self.panel.room_stats.clear()
         if self.coordinator:
             self.stop(then=self.start)
 
     def settings_saved(self) -> None:
         handoff.set_file_logging(config.WRITE_LOGS)
 
+    def restart_room(self, serial: str) -> None:
+        if not self.coordinator:
+            messagebox.showinfo("Restart", "Press Start first.")
+        elif not self.coordinator.restart_room(serial):
+            messagebox.showinfo("Restart", "This room is already restarting, or it is not an open LDPlayer instance.")
+        else:
+            logging.getLogger("coordinator").info("restart of %s asked from the panel", serial)
+
     def restart_now(self) -> bool:
+        if config.MODE == "single" and self.coordinator:
+            self.coordinator.restart_requested = True
+            logging.getLogger("coordinator").info("restart of all rooms asked from the panel, one at a time")
+            return True
         if not self.coordinator or self.coordinator.idle is None:
             messagebox.showinfo("Restart", "Start first and wait until one emulator is playing: the waiting one "
                                            "restarts first, then the other.")
@@ -532,7 +803,7 @@ class App:
         running = self.coordinator is not None
         return [("Open panel", self.show_window, True),
                 ("Stop" if running else "Start", self.toggle, not self.starting),
-                ("Restart both now", self.restart_now, running),
+                ("Restart all now" if config.MODE == "single" else "Restart both now", self.restart_now, running),
                 None,
                 ("Exit", self.quit, True)]
 
@@ -591,6 +862,7 @@ class App:
         coordinator, self.coordinator = self.coordinator, None
         if coordinator:
             handoff.stop(coordinator)
+        handoff.delete_logs()
         self.root.destroy()
 
     @staticmethod

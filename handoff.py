@@ -50,6 +50,13 @@ def set_file_logging(enabled: bool) -> None:
         log.removeHandler(_file_handler)
 
 
+def delete_logs() -> None:
+    log.removeHandler(_file_handler)
+    _file_handler.close()
+    for path in LOG_DIR.glob("coordinator.log*"):
+        path.unlink(missing_ok=True)
+
+
 set_file_logging(config.WRITE_LOGS)
 
 DEVICES = (config.DEVICE_A, config.DEVICE_B)
@@ -210,30 +217,9 @@ class Coordinator:
         else:
             log.info("restarting %s to clear the lag; %s keeps playing, stuck checks paused", serial, self.active)
         try:
-            package = adb.installed_clicker(serial)
-            if not emulators.reboot(serial):
-                raise RuntimeError("only LDPlayer instances can be restarted")
-            self._wait(serial, "shutting down", lambda: not adb.booted(serial), 60, 2)
-            if not self._wait(serial, "adb check", lambda: adb.ensure_connected(serial) and adb.booted(serial),
-                              config.RESTART_BOOT_TIMEOUT_SECONDS):
-                raise RuntimeError(f"not back after {config.RESTART_BOOT_TIMEOUT_SECONDS:.0f}s")
-            emulators.sort_windows()
-            if package and self._wait(serial, "clicker", lambda: adb.clicker_service_ready(serial, package), 120):
-                if not self._wait(serial, "linking", lambda: link_clicker(serial, quiet=True), 120, 5):
-                    log.error("could not link the clicker on %s to this computer after the restart", serial)
-                adb.resume_clicker(serial, package, config.DUAL_CONFIGS.get(serial))
-            else:
-                log.error("the clicker accessibility service on %s did not come back; enable it by hand", serial)
-            time.sleep(5)
-            adb.start_game(serial, config.GAME_PACKAGE)
-            emulators.sort_windows()
-            log.info("%s restarted and resumed", serial)
-        except Exception as exc:
-            log.error("restart of %s failed: %s", serial, exc)
-            notify.send(f"🚨 dual-login: restart of {serial} failed: {exc}", priority="urgent")
+            reboot_and_resume(serial, self.restart_wait)
         finally:
             with self._lock:
-                self.restart_wait.pop(serial, None)
                 self.restarting.discard(serial)
                 self.restart_pending.discard(serial)
                 self.active_since = time.time()
@@ -241,10 +227,6 @@ class Coordinator:
                 if not self.restart_pending:
                     self.cycle_started_at = time.time()
                     log.info("restart cycle finished")
-
-    def _wait(self, serial: str, phase: str, check, timeout: float, interval: float = 3.0) -> bool:
-        self.restart_wait[serial] = (phase, time.time() + timeout)
-        return adb.wait_until(check, timeout, interval)
 
     def rescue(self) -> bool:
         targets = {serial for serial in DEVICES if emulators.restartable(serial)}
@@ -310,6 +292,39 @@ class Coordinator:
                 notify.send(f"🚨 dual-login: could not force-stop {to_stop}: {exc}", priority="urgent")
 
 
+def reboot_and_resume(serial: str, phases: dict) -> None:
+    """Restarts the emulator, waits for it, links the clicker again, resumes its config and opens the game.
+    `phases[serial]` holds the current step and its deadline for the panel."""
+    def wait(phase: str, check, timeout: float, interval: float = 3.0) -> bool:
+        phases[serial] = (phase, time.time() + timeout)
+        return adb.wait_until(check, timeout, interval)
+
+    try:
+        package = adb.installed_clicker(serial)
+        if not emulators.reboot(serial):
+            raise RuntimeError("only LDPlayer instances can be restarted")
+        wait("shutting down", lambda: not adb.booted(serial), 60, 2)
+        if not wait("adb check", lambda: adb.ensure_connected(serial) and adb.booted(serial),
+                    config.RESTART_BOOT_TIMEOUT_SECONDS):
+            raise RuntimeError(f"not back after {config.RESTART_BOOT_TIMEOUT_SECONDS:.0f}s")
+        emulators.sort_windows()
+        if package and wait("clicker", lambda: adb.clicker_service_ready(serial, package), 120):
+            if not wait("linking", lambda: link_clicker(serial, quiet=True), 120, 5):
+                log.error("could not link the clicker on %s to this computer after the restart", serial)
+            adb.resume_clicker(serial, package, config.CONFIGS.get(serial))
+        else:
+            log.error("the clicker accessibility service on %s did not come back; enable it by hand", serial)
+        time.sleep(5)
+        adb.start_game(serial, config.GAME_PACKAGE)
+        emulators.sort_windows()
+        log.info("%s restarted and resumed", serial)
+    except Exception as exc:
+        log.error("restart of %s failed: %s", serial, exc)
+        notify.send(f"🚨 dual-login: restart of {serial} failed: {exc}", priority="urgent")
+    finally:
+        phases.pop(serial, None)
+
+
 def check_device(serial: str) -> str | None:
     """Why `serial` can't play, or None when its clicker has a config to play."""
     try:
@@ -319,7 +334,7 @@ def check_device(serial: str) -> str | None:
             return f"the clicker is not installed on {serial}"
         if not adb.clicker_service_ready(serial, package):
             return f"the clicker accessibility service on {serial} is off: turn it on in the Android settings"
-        if not config.DUAL_CONFIGS.get(serial) and not adb.clicker_playing(serial, package):
+        if not config.CONFIGS.get(serial) and not adb.clicker_playing(serial, package):
             return f"no config is running on {serial}: pick one next to {serial} on the panel, or start it in the clicker"
     except Exception as exc:
         return f"could not check {serial}: {exc}"
@@ -330,7 +345,7 @@ def prepare_device(serial: str) -> None:
     """Plays the chosen config, or the one already open, then opens the game if it is closed."""
     try:
         package = adb.installed_clicker(serial)
-        scenario = config.DUAL_CONFIGS.get(serial)
+        scenario = config.CONFIGS.get(serial)
         adb.resume_clicker(serial, package, scenario)
         log.info("%s plays %s", serial, scenario or "its running config")
         if not adb.game_running(serial, config.GAME_PACKAGE):
@@ -400,7 +415,7 @@ def make_handler(coordinator: Coordinator):
         def do_GET(self) -> None:
             if self.path != "/health":
                 return self._reply(404, "not found")
-            self._reply(200, f"ok active={coordinator.active}")
+            self._reply(200, f"ok active={getattr(coordinator, 'active', None)}")
 
         def do_POST(self) -> None:
             if self.path != "/adb":
@@ -451,15 +466,19 @@ def make_handler(coordinator: Coordinator):
 
 
 def start(active: str | None = None) -> Coordinator:
-    """Attaches both devices, then runs the watchdog and the event server in background threads."""
+    """Attaches the devices, then runs the watchdog and the event server in background threads."""
     global DEVICES
     config.reload()
     if not config.BRIDGE_TOKEN:
         raise SystemExit("No bridge token: run main.py (or the app) so first-run setup can create one.")
-    DEVICES = (config.DEVICE_A, config.DEVICE_B)
+    DEVICES = config.DEVICES
     set_file_logging(config.WRITE_LOGS)
 
-    coordinator = Coordinator(active)
+    if config.MODE == "single":
+        import solo
+        coordinator = solo.Solo(DEVICES)
+    else:
+        coordinator = Coordinator(active)
     server = ThreadingHTTPServer((config.BRIDGE_HOST, config.BRIDGE_PORT), make_handler(coordinator))
     coordinator.server = server
     adb.restart_server()
@@ -470,9 +489,13 @@ def start(active: str | None = None) -> Coordinator:
         else:
             log.error("%s could not be attached to adb; the watchdog keeps retrying", serial)
 
-    coordinator.active_since = time.time() - config.INITIAL_POLL_DELAY_SECONDS
-    log.info("starting: active=%s idle=%s (event-driven, listening on %s:%d)",
-             coordinator.active, coordinator.idle, config.BRIDGE_HOST, config.BRIDGE_PORT)
+    if config.MODE == "single":
+        log.info("starting: single, %s (listening on %s:%d)", ", ".join(DEVICES), config.BRIDGE_HOST,
+                 config.BRIDGE_PORT)
+    else:
+        coordinator.active_since = time.time() - config.INITIAL_POLL_DELAY_SECONDS
+        log.info("starting: active=%s idle=%s (event-driven, listening on %s:%d)",
+                 coordinator.active, coordinator.idle, config.BRIDGE_HOST, config.BRIDGE_PORT)
 
     threading.Thread(target=watchdog_loop, args=(coordinator,), daemon=True).start()
     threading.Thread(target=server.serve_forever, daemon=True).start()
